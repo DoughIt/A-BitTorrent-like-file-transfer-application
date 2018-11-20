@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
   DPRINTF(DEBUG_INIT, "peer.c main beginning\n");
 
 #ifdef TESTING
-  config.identity = 1; // your student number here
+  config.identity = 16302010059; // your student number here
   strcpy(config.chunk_file, "chunkfile");
   strcpy(config.has_chunk_file, "haschunks");
 #endif
