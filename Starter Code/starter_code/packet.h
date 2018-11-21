@@ -1,5 +1,6 @@
 /**
- * # Packet
+ * packet.h
+ *
  * Structure for packet.
  *
  * @author Jon Zhang <16302010059@fudan.edu.cn>
@@ -18,14 +19,14 @@
 #define MAGIC 15441        /**< The magic number should be 15441 **/
 #define VERSION 1          /**< The version number should be 1 **/
 
-#define GET_NUM 6          /**< The maximum number of GET requests that a peer can tackle **/
-#define WINDOW_SIZE 8      /**< Sliding window size **/
-#define DUP_ACK_NUM 3      /**< To avoid confusion from re-ordering, a sender counts a packet lost only after 3 duplicate ACKs in a row **/
-#define TIMEOUT 5
+typedef enum {
+    HOST, NET
+} value_type;
 
 typedef enum {
     IGNORE, QUEUE, NOTIFY
 } handle_pkt_lost;
+
 typedef enum {
     WHOHAS = 0, IHAVE, GET, DATA, ACK, DENIED
 } pkt_type;
@@ -39,6 +40,7 @@ typedef enum {
  * 6. Sequence Number [4 bytes]
  * 7. Acknowledgment Number [4 bytes]
  * All integers must be unsigned
+ * All multi_byte integer fields must be transmitted in network byte order.
  *
  * > The magic number should be 15441, the version number should be 1.
  * > Peers should drop packet that do not have these values.
@@ -51,13 +53,24 @@ typedef struct {
     uint16_t total_pkt_len;
     uint32_t seq_num;         /**< Used for congestion control and reliable transmission **/
     uint32_t ack_num;         /**< Used for reliable transmission **/
-
 } pkt_header;
 
 typedef struct {
-    pkt_header header;
-    uint8_t data[PKT_SIZE];
-} pkt;
+    pkt_header *header;
+    uint8_t data[0];
+} packet;
+
+/**
+ * magic_num = MAGIC, version_num = VERSION, header_len = HDR_SIZE
+ */
+void init(value_type, packet *, uint8_t, uint16_t, uint32_t, uint32_t, uint8_t *);
+
+void init(value_type, packet *, uint16_t, uint8_t, uint8_t, uint16_t, uint16_t, uint32_t, uint32_t, uint8_t *);
+
+void init_host(packet *, uint16_t, uint8_t, uint8_t, uint16_t, uint16_t, uint32_t, uint32_t, uint8_t *);
+
+void init_net(packet *, uint16_t, uint8_t, uint8_t, uint16_t, uint16_t, uint32_t, uint32_t, uint8_t *);
+
 /**
  * WHOHAS contains:
  * the number of chunk hashes(1 byte)
