@@ -13,19 +13,12 @@
 void init(value_type vt, packet *pkt, uint8_t type, uint16_t tot_len,
           uint32_t seq, uint32_t ack,
           uint8_t *data) {
-    init(vt, pkt, MAGIC, VERSION, type, HDR_SIZE, tot_len, seq, ack, data);
-}
-
-void init(value_type vt, packet *pkt, uint16_t magic, uint8_t version, uint8_t type,
-          uint16_t hdr_len, uint16_t tot_len,
-          uint32_t seq, uint32_t ack,
-          uint8_t *data) {
     switch (vt) {
         case HOST:
-            init_host(pkt, magic, version, type, hdr_len, tot_len, seq, ack, data);
+            init_host(pkt, MAGIC, VERSION, type, HDR_SIZE, tot_len, seq, ack, data);
             break;
         case NET:
-            init_net(pkt, magic, version, type, hdr_len, tot_len, seq, ack, data);
+            init_net(pkt, MAGIC, VERSION, type, HDR_SIZE, tot_len, seq, ack, data);
             break;
         default:
             break;
@@ -62,4 +55,10 @@ void init_net(packet *pkt, uint16_t magic, uint8_t version, uint8_t type,
     if (data != NULL) {
         memcpy(pkt->data, data, tot_len - hdr_len);
     }
+}
+
+packet *make_pkt(value_type host_net, uint8_t type, uint32_t seq_ack, uint8_t *data) {
+    packet *pkt = (packet *) malloc(sizeof(packet) + sizeof(data));
+    init(host_net, pkt, type, sizeof(pkt), type == DATA ? seq_ack : 0, type == ACK ? seq_ack : 0, data);
+    return pkt;
 }

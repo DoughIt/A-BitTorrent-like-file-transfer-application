@@ -18,6 +18,8 @@
 
 #define MAGIC 15441        /**< The magic number should be 15441 **/
 #define VERSION 1          /**< The version number should be 1 **/
+#define INIT_SEQ 0
+#define INIT_ACK 0
 
 typedef enum {
     HOST, NET
@@ -97,5 +99,7 @@ void init_net(packet *, uint16_t, uint8_t, uint8_t, uint16_t, uint16_t, uint32_t
  * ACK packet does not contain any data.
  * The seq num should be invalid. (Do not send data in a ACK packet)
  */
+
+packet *make_pkt(value_type host_net, uint8_t type, uint32_t seq_ack, uint8_t *data);
 
 #endif //A_BITTORRENT_LIKE_FILE_TRANSFER_APPLICATION_PACKET_H
