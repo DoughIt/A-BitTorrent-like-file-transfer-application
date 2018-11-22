@@ -21,6 +21,8 @@
 #define INIT_SEQ 0
 #define INIT_ACK 0
 
+#define pkt_parse(pkt) pkt_parse_type(pkt->header->packet_type)
+
 typedef enum {
     HOST, NET
 } value_type;
@@ -67,11 +69,11 @@ typedef struct {
  */
 void init(value_type, packet *, uint8_t, uint16_t, uint32_t, uint32_t, uint8_t *);
 
-void init(value_type, packet *, uint16_t, uint8_t, uint8_t, uint16_t, uint16_t, uint32_t, uint32_t, uint8_t *);
-
 void init_host(packet *, uint16_t, uint8_t, uint8_t, uint16_t, uint16_t, uint32_t, uint32_t, uint8_t *);
 
 void init_net(packet *, uint16_t, uint8_t, uint8_t, uint16_t, uint16_t, uint32_t, uint32_t, uint8_t *);
+
+packet *make_PKT(value_type host_net, uint8_t type, uint32_t seq_ack, uint32_t data_size, uint8_t *data);
 
 /**
  * WHOHAS contains:
@@ -79,27 +81,32 @@ void init_net(packet *, uint16_t, uint8_t, uint8_t, uint16_t, uint16_t, uint32_t
  * 3 bytes of empty padding space to keep the chunk 32-bit aligned
  * Both seq num and ack num have no meaning, that is, they are invalid.
  */
+packet *make_WHOHAS(uint32_t data_size, uint8_t *data);
 
 /**
  * IHAVE is familiar with WHOHAS.
  */
+packet *make_IHAVE(uint32_t data_size, uint8_t *data);
 
 /**
- * The payload of GET contains only the chunk hash for the chunk the client wnats to fetch(20 bytes)
+ * The payload of GET contains only the chunk hash for the chunk the client wants to fetch(20 bytes)
  * Both seq num and ack num are invalid.
  */
+packet *make_GET(uint8_t *data);
 
 /**
  * DATA packets do not have any payload format defined
  * normally they should just contain file data.
  * The ack num should be invalid. (Do not use a DATA packet to acknowledge a previous packet)
  */
+packet *make_DATA(uint32_t seq_ack, uint32_t data_size, uint8_t *data);
 
 /**
  * ACK packet does not contain any data.
  * The seq num should be invalid. (Do not send data in a ACK packet)
  */
+packet *make_ACK(uint32_t seq_ack);
 
-packet *make_pkt(value_type host_net, uint8_t type, uint32_t seq_ack, uint8_t *data);
+pkt_type pkt_parse_type(uint8_t type);
 
-#endif //A_BITTORRENT_LIKE_FILE_TRANSFER_APPLICATION_PACKET_H
+#endif; //A_BITTORRENT_LIKE_FILE_TRANSFER_APPLICATION_PACKET_H

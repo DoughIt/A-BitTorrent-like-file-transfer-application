@@ -8,12 +8,23 @@
 #ifndef A_BITTORRENT_LIKE_FILE_TRANSFER_APPLICATION_TIMER_H
 #define A_BITTORRENT_LIKE_FILE_TRANSFER_APPLICATION_TIMER_H
 
-int running;
+#include <sys/time.h>
 
-int is_running();
+#define ALPHA 0.125
+#define BETA 0.25
 
-void start_timer(uint32_t seq);
+typedef unsigned char bool;
 
-void stop_timer(uint32_t seq);
+typedef struct timer_s {
+    bool running;
+    struct timeval timestamp;
+} timer_t;
 
+bool is_running(timer_t *);
+
+void start_timer(timer_t *, uint32_t);
+
+void stop_timer(timer_t *, uint32_t);
+
+void update(float);
 #endif //A_BITTORRENT_LIKE_FILE_TRANSFER_APPLICATION_TIMER_H

@@ -32,11 +32,11 @@ void bt_help() {
     bt_usage();
     fprintf(stderr,
             "         -h                help (this message)\n"
-            "         -p <peerfile>     The list of all peers\n"
-            "         -c <chunkfile>    The list of chunks\n"
-            "         -m <maxconn>      Max # of downloads\n"
-            "	      -f <master-chunk> The master chunk file\n"
-            "         -i <identity>     Which peer # am I?\n"
+                    "         -p <peerfile>     The list of all peers\n"
+                    "         -c <chunkfile>    The list of chunks\n"
+                    "         -m <maxconn>      Max # of downloads\n"
+                    "	      -f <master-chunk> The master chunk file\n"
+                    "         -i <identity>     Which peer # am I?\n"
     );
 }
 
@@ -143,6 +143,17 @@ void bt_parse_peer_list(bt_config_t *config) {
         node->next = config->peers;
         config->peers = node;
     }
+}
+
+bt_peer_t *get_peer(const bt_config_t *config, struct sockaddr_in addr) {
+    assert(config != NULL);
+    bt_peer_t *p;
+    for (p = config->peers; p != NULL; p = p->next) {
+        if (p->addr.sin_port == addr.sin_port) {
+            return p;
+        }
+    }
+    return NULL;
 }
 
 void bt_dump_config(bt_config_t *config) {

@@ -22,11 +22,15 @@
 #include "spiffy.h"
 #include "bt_parse.h"
 #include "input_buffer.h"
+#include "handler.h"
+
+bt_config_t config;
 
 void peer_run(bt_config_t *config);
 
+
 int main(int argc, char **argv) {
-    bt_config_t config;
+
 
     bt_init(&config, argc, argv);
 
@@ -58,18 +62,22 @@ void process_inbound_udp(int sock) {
     char buf[BUFLEN];
 
     fromlen = sizeof(from);
-    spiffy_recvfrom(sock, buf, BUFLEN, 0, (struct sockaddr *) &from, &fromlen);
-
-    printf("PROCESS_INBOUND_UDP SKELETON -- replace!\n"
-                   "Incoming message from %s:%d\n%s\n\n",
-           inet_ntoa(from.sin_addr),
-           ntohs(from.sin_port),
-           buf);
+    if (spiffy_recvfrom(sock, buf, BUFLEN, 0, (struct sockaddr *) &from, &fromlen) != -1) {
+        packet *pkt = (packet *) buf;
+        bt_peer_t *peer = get_peer(&config, from);
+        process_PKT(pkt, peer);
+    }
+//    printf("PROCESS_INBOUND_UDP SKELETON -- replace!\n"
+//                   "Incoming message from %s:%d\n%s\n\n",
+//           inet_ntoa(from.sin_addr),
+//           ntohs(from.sin_port),
+//           buf);
 }
 
 void process_get(char *chunkfile, char *outputfile) {
     printf("PROCESS GET SKELETON CODE CALLED.  Fill me in!  (%s, %s)\n",
            chunkfile, outputfile);
+    //TODO
 }
 
 void handle_user_input(char *line, void *cbdata) {
