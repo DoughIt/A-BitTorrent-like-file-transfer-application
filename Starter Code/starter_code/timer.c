@@ -7,19 +7,30 @@
 
 #include "timer.h"
 #include <math.h>
+#include <stddef.h>
 
-float timeout_interval = 1000, dev_rtt = 0, estimated_rtt = 0, sample_rtt = 0;
+double timeout_interval = 1000, dev_rtt = 0, estimated_rtt = 0, sample_rtt = 0;
 
-bool is_running(timer_t *timer) {
+int is_running(my_timer_t *timer) {
     return timer->running == 1;
 }
 
-void start_timer(timer_t *timer, uint32_t seq) {
+void init_timer(my_timer_t *timer) {
+    timer->running = 0;
+    timer->timestamp.tv_sec = (__time_t) (timeout_interval / 1000);
+    timer->timestamp.tv_usec = 0;
+}
+
+void start_timer(my_timer_t *timer, uint32_t seq) {
+    if (timer == NULL)
+        return;
     timer->running = 1;
     //TODO
 }
 
-void stop_timer(timer_t *timer, uint32_t seq) {
+void stop_timer(my_timer_t *timer, uint32_t seq) {
+    if (timer == NULL)
+        return;
     timer->running = 0;
     //TODO
 }

@@ -1,4 +1,4 @@
-#!/usr/local/bin/ruby
+#!/usr/bin/ruby
 
 
 # tests ability of your peer to send a correct WHOHAS request

@@ -26,7 +26,7 @@ typedef struct sender_s {
     uint32_t last_acked;
     uint32_t last_available;
     uint32_t dup_ack_num;
-    timer_t timer;
+    my_timer_t *timer;
     queue *pkts;
     bt_peer_t *p_receiver;
 } sender;
@@ -35,6 +35,7 @@ typedef struct receiver_s {
     uint32_t last_read;
     uint32_t last_rcvd;
     uint32_t next_expected;
+    my_timer_t *timer;
     chunk_t *chunk;
     bt_peer_t *p_sender;
 } receiver;
@@ -54,9 +55,15 @@ void init_sender_pool(sender_pool_t *sender_pool, int max);
 
 void init_receiver_pool(receiver_pool_t *receiver_pool, int max);
 
-void add_sender(sender_pool_t *sender_pool, bt_peer_t *p_receiver, queue *pkts);
+sender *add_sender(sender_pool_t *sender_pool, bt_peer_t *p_rcvr, queue *pkts);
 
-void add_receiver(receiver_pool_t *receiver_pool, bt_peer_t *p_sender, chunk_t *chunk);
+receiver *add_receiver(receiver_pool_t *receiver_pool, bt_peer_t *p_sdr, chunk_t *chunk);
 
+sender *get_sender(sender_pool_t *sdr_pool, bt_peer_t *p_rcvr);
+
+receiver *get_receiver(receiver_pool_t *rcvr_pool, bt_peer_t *p_sdr);
+
+void remove_sender(sender_pool_t*sender_pool, sender*sdr);
+void remove_receiver(receiver_pool_t*receiver_pool, receiver*rcvr);
 
 #endif //BITTORRECT_LIKE_RCV_SEND_H
