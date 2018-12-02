@@ -223,7 +223,7 @@ chunk_t *get_data_chunk(char *chunkfile, packet *pkt) {
     }
     fclose(fp);
     fp = fopen(file_name, "r");
-    fseek(fp, data_chunk->id * BT_CHUNK_SIZE, SEEK_SET);//定位读指针起始位置
+    fseek(fp, data_chunk->id * BT_CHUNK_SIZE, SEEK_SET);    //定位读指针起始位置
     fread(data_chunk->data, BT_CHUNK_SIZE, 1, fp);
     fclose(fp);
     return data_chunk;

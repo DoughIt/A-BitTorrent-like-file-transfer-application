@@ -100,5 +100,4 @@ chunk_t *get_data_chunk(char *chunkfile, packet *pkt);
  */
 int check_chunk(chunk_t *chunk, char *sha1);
 
-
 #endif //BITTORRENT_TRACKER_H
