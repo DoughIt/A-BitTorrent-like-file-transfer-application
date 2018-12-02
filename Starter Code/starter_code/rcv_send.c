@@ -20,7 +20,7 @@ void init_receiver_pool(receiver_pool_t *receiver_pool, int max) {
     receiver_pool->workers = malloc(max * sizeof(receiver));
 }
 
-sender *add_sender(sender_pool_t *sender_pool, bt_peer_t *p_rcvr, queue *pkts) {
+sender *add_sender(sender_pool_t *sender_pool, bt_peer_t *p_rcvr, packet **pkts) {
     if (sender_pool->cur_num >= sender_pool->max_num)
         return NULL;
     sender *sdr = malloc(sizeof(sender));
@@ -31,6 +31,7 @@ sender *add_sender(sender_pool_t *sender_pool, bt_peer_t *p_rcvr, queue *pkts) {
     sdr->last_available = WINDOW_SIZE;
     sdr->dup_ack_num = 0;
     sdr->pkts = pkts;
+    sdr->pkt_num = sizeof(pkts) / (DATA_SIZE + HDR_SIZE) + (sizeof(pkts) % (DATA_SIZE + HDR_SIZE) != 0);
     sdr->timer = (my_timer_t *) malloc(sizeof(my_timer_t));
     init_timer(sdr->timer);
     enqueue(sender_pool->workers, sdr);
@@ -81,9 +82,31 @@ receiver *get_receiver(receiver_pool_t *rcvr_pool, bt_peer_t *p_sdr) {
 }
 
 void remove_sender(sender_pool_t *sender_pool, sender *sdr) {
-
+    if (sender_pool == NULL || sdr == NULL)
+        return;
+    sender *cur_sender;
+    int n = sender_pool->cur_num;
+    for (int i = 0; i < n; ++i) {
+        cur_sender = dequeue(sender_pool->workers);
+        if (cur_sender->p_receiver == sdr->p_receiver) {
+            sender_pool->cur_num--;
+            return;
+        }
+        enqueue(sender_pool->workers, cur_sender);
+    }
 }
 
 void remove_receiver(receiver_pool_t *receiver_pool, receiver *rcvr) {
-
+    if (receiver_pool == NULL || rcvr == NULL)
+        return;
+    receiver *cur_receiver;
+    int n = receiver_pool->cur_num;
+    for (int i = 0; i < n; ++i) {
+        cur_receiver = dequeue(receiver_pool->workers);
+        if (cur_receiver->p_sender == rcvr->p_sender) {
+            receiver_pool->cur_num--;
+            return;
+        }
+        enqueue(receiver_pool->workers, cur_receiver);
+    }
 }
