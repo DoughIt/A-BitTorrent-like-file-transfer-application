@@ -10,21 +10,26 @@
 
 #include "timer.h"
 #include "tracker.h"
+#include "rcv_send.h"
 #include <sys/socket.h>
 
 int correct(packet *pkt);
 
 int not_correct(packet *pkt);
 
-int is_ack(packet *pkt, uint32_t ack_num);
+void set_configs(bt_config_t c, int s);
+
+void output();
+
+void look_at();
 
 void send_PKT(int sock, bt_peer_t *peers, packet *pkt);
 
 void send_PKTS(int sock, bt_peer_t *peer, queue *pkts);
 
-void look_at();
-
 bt_peer_t *get_peer(struct sockaddr_in addr);
+
+void process_sender(sender *sdr);
 
 void process_download(bt_config_t config, int sock);
 

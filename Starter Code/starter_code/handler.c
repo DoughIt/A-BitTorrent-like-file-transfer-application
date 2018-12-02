@@ -6,10 +6,10 @@
  */
 #include "handler.h"
 #include "spiffy.h"
+#include "packet.h"
 #include <stdlib.h>
 #include <assert.h>
-#include <zconf.h>
-#include "rcv_send.h"
+#include <memory.h>
 
 bt_config_t config;
 int sock;
@@ -19,9 +19,8 @@ queue *done_chunks;//下载完成的chunk
 sender_pool_t *sender_pool;
 receiver_pool_t *receiver_pool;
 
-
 int correct(packet *pkt) {
-    pkt_header *header = pkt->header;
+    pkt_header *header = &pkt->header;
     if (header->magic_num != MAGIC || header->version_num != VERSION || header->packet_type > DENIED ||
         header->packet_type < WHOHAS)
         return 0;
@@ -35,27 +34,6 @@ int correct(packet *pkt) {
 
 int not_correct(packet *pkt) {
     return !correct(pkt);
-}
-
-int is_ack(packet *pkt, uint32_t ack_num) {
-    return pkt->header->ack_num == ack_num;
-}
-
-void send_PKT(int sock, bt_peer_t *peer, packet *pkt) {
-    if (peer != NULL) {
-        convert(pkt, NET);
-        spiffy_sendto(sock, pkt, ntohs(pkt->header->total_pkt_len), 0, (struct sockaddr *) &peer->addr,
-                      sizeof(peer->addr));
-        convert(pkt, HOST);
-    }
-}
-
-void send_PKTS(int sock, bt_peer_t *peer, queue *pkts) {
-    node *cur_node = pkts->head;
-    while (cur_node != NULL) {
-        send_PKT(sock, peer, (packet *) cur_node->data);
-        cur_node = cur_node->next;
-    }
 }
 
 void set_configs(bt_config_t c, int s) {
@@ -73,76 +51,22 @@ bt_peer_t *get_peer(struct sockaddr_in addr) {
     return NULL;
 }
 
-void process_download(bt_config_t c, int s) {
-    if (c.chunk_file == NULL || c.output_file == NULL)
+void output() {
+    if (!is_empty(down_chunks) || is_empty(done_chunks)) {
         return;
-    set_configs(c, s);
-    init_receiver_pool(receiver_pool, config.max_conn);
-    init_sender_pool(sender_pool, config.max_conn);
-
-    queue *queue_chunk = list_chunks(config.chunk_file);
-    down_chunks = queue_chunk;
-
-    queue *queue_pkt = chunks2pkts(queue_chunk, WHOHAS);
-    packet *pkt;
-    while ((pkt = (packet *) dequeue(queue_pkt)) != NULL) {
-        bt_peer_t *peers = config.peers;
-        while (peers != NULL) {
-            if (peers->id == config.identity)
-                send_PKT(sock, peers, pkt);
-            peers = peers->next;
-        }
     }
-
-    while (!is_empty(down_chunks)) {    //每秒查询一次，如果没有下载完成所有的块，则继续下载
-        struct timeval timer;
-        timer.tv_sec = 1;
-        timer.tv_usec = 0;
-        select(0, NULL, NULL, NULL, &timer);
-        look_at();
+    chunk_t *data_chunk;
+    while (done_chunks->n) {
+        data_chunk = (chunk_t *) dequeue(done_chunks);
+        if (check_chunk(data_chunk, data_chunk->sha1)) {//检查数据是否正确
+            FILE *fp = fopen(config.output_file, "rw");
+            fseek(fp, data_chunk->id * BT_CHUNK_SIZE, SEEK_SET);
+            fwrite(data_chunk->data, sizeof(data_chunk->data), 1, fp);
+        } else break;
+        free_chunk(data_chunk);
     }
-}
-
-void process_PKT(packet *pkt, struct sockaddr_in from) {
-    convert(pkt, HOST);
-    if (not_correct(pkt))
-        return;
-    bt_peer_t *peer = get_peer(from);
-    pkt_type type = pkt_parse(pkt);
-    switch (type) {
-        case WHOHAS:
-            process_WHOHAS(pkt, peer);
-            break;
-        case IHAVE:
-            process_IHAVE(pkt, peer);
-            break;
-        case GET:
-            process_GET(pkt, peer);
-            break;
-        case ACK:
-            process_ACK(pkt, peer);
-            break;
-        case DATA:
-            process_DATA(pkt, peer);
-            break;
-        case DENIED:
-            process_DENIED(pkt, peer);
-            break;
-        default:
-            break;
-    }
-}
-
-void process_WHOHAS(packet *pkt, bt_peer_t *peer) {
-    queue *who_has_chunks = pkt2chunks(pkt, WHOHAS);
-    queue *i_have_chunks = which_i_have(who_has_chunks, config.has_chunk_file);
-    if (i_have_chunks != NULL) {
-        queue *i_have_pkts = chunks2pkts(i_have_chunks, IHAVE);
-        send_PKTS(sock, peer, i_have_pkts);
-        free_queue(i_have_pkts);
-        free_queue(i_have_chunks);
-    }
-    free_queue(who_has_chunks);
+    free_queue(down_chunks);
+    free_queue(done_chunks);
 }
 
 void look_at() {
@@ -165,7 +89,7 @@ void look_at() {
         if (peer == NULL)   //可能没接收到拥有这个chunk的peer的IHAVE数据包
             return;
         receiver *r = add_receiver(receiver_pool, peer, down_chunk);//建立连接，指定需要下载的chunk以及发送方
-        update_state(down_chunks, down_chunk, DOWNLOADING);  //更新chunk状态为下载中
+        update_state(down_chunks, down_chunk, DOWNLOADING);  //更新chunk状态为【下载中】
         uint8_t *bin_sha1 = (uint8_t *) malloc(SHA1_HASH_SIZE);
         ascii2hex(down_chunk->sha1, sizeof(down_chunk->sha1), bin_sha1);
         packet *pkt_get = make_GET(bin_sha1);
@@ -173,6 +97,130 @@ void look_at() {
         start_timer(r->timer, 0);   //启动定时器
         free_packet(pkt_get);
     }
+}
+
+void send_PKT(int sock, bt_peer_t *peer, packet *pkt) {
+    if (peer != NULL) {
+        convert(pkt, NET);
+        if (spiffy_sendto(sock, pkt, ntohs(pkt->header.total_pkt_len), 0, (struct sockaddr *) &peer->addr,
+                          sizeof(peer->addr)) != -1)
+            puts("成功发送数据包");
+        convert(pkt, HOST);
+    }
+}
+
+void send_PKTS(int sock, bt_peer_t *peer, queue *pkts) {
+    node *cur_node = pkts->head;
+    while (cur_node) {
+        send_PKT(sock, peer, (packet *) cur_node->data);
+        cur_node = cur_node->next;
+    }
+}
+
+void process_sender(sender *sdr) {
+    start_timer(sdr->timer, 0);
+    struct timeval timer;
+    timer.tv_sec = 1;
+    timer.tv_usec = 0;
+    while (1) {
+        if (select(0, NULL, NULL, NULL, &timer) == 0) {
+            if (sdr->last_sent < sdr->last_available && sdr->last_sent < sdr->pkt_num) {
+                send_PKT(sock, sdr->p_receiver, sdr->pkts[++sdr->last_sent]);
+            }
+        }
+        if (sdr->last_sent >= sdr->pkt_num)//发送完毕
+            break;
+    }
+}
+
+void process_download(bt_config_t c, int s) {
+    if (c.chunk_file == NULL || c.output_file == NULL)
+        return;
+    set_configs(c, s);
+    receiver_pool = malloc(sizeof(receiver_pool_t));
+    sender_pool = malloc(sizeof(sender_pool_t));
+    init_receiver_pool(receiver_pool, config.max_conn);
+    init_sender_pool(sender_pool, config.max_conn);
+
+    queue *queue_chunk = list_chunks(config.chunk_file);
+    down_chunks = queue_chunk;
+
+    queue *queue_pkt = chunks2pkts(queue_chunk, WHOHAS);
+    packet *pkt;
+    while ((pkt = (packet *) dequeue(queue_pkt)) != NULL) {
+        bt_peer_t *peers = config.peers;
+        while (peers != NULL) {
+            if (peers->id != config.identity)
+                send_PKT(sock, peers, pkt);
+            peers = peers->next;
+        }
+    }
+    struct timeval timer;
+    timer.tv_sec = 2;
+    timer.tv_usec = 0;
+    while (!is_empty(down_chunks)) {    //每隔两秒检查一次下载任务是否完成，未完成则调用look_at()下载
+        switch (select(0, NULL, NULL, NULL, &timer)) {
+            case 0:
+                look_at();
+            default:
+                break;
+        }
+    }
+
+    output(); //将接收完成的数据输出到outputfile
+
+}
+
+void process_PKT(packet *pkt, struct sockaddr_in from) {
+    puts("接收到数据包");
+    convert(pkt, HOST);
+    if (not_correct(pkt)) {
+        puts("数据包损坏");
+        return;
+    }
+    bt_peer_t *peer = get_peer(from);
+    pkt_type type = pkt_parse_type(pkt->header.packet_type);
+    switch (type) {
+        case WHOHAS:
+            puts("处理WHOHAS");
+            process_WHOHAS(pkt, peer);
+            break;
+        case IHAVE:
+            puts("处理IHAVE");
+            process_IHAVE(pkt, peer);
+            break;
+        case GET:
+            puts("处理GET");
+            process_GET(pkt, peer);
+            break;
+        case ACK:
+            puts("处理ACK");
+            process_ACK(pkt, peer);
+            break;
+        case DATA:
+            puts("处理DATA");
+            process_DATA(pkt, peer);
+            break;
+        case DENIED:
+            puts("处理DENIED");
+            process_DENIED(pkt, peer);
+            break;
+        default:
+            puts("没有对应类型");
+            break;
+    }
+}
+
+void process_WHOHAS(packet *pkt, bt_peer_t *peer) {
+    queue *who_has_chunks = pkt2chunks(pkt, WHOHAS);
+    queue *i_have_chunks = which_i_have(who_has_chunks, config.has_chunk_file);
+    if (i_have_chunks != NULL && !is_empty(i_have_chunks)) {
+        queue *i_have_pkts = chunks2pkts(i_have_chunks, IHAVE);
+        send_PKTS(sock, peer, i_have_pkts);
+        free_queue(i_have_pkts);
+        free_queue(i_have_chunks);
+    }
+    free_queue(who_has_chunks);
 }
 
 void process_IHAVE(packet *pkt, bt_peer_t *peer) {
@@ -188,28 +236,61 @@ void process_IHAVE(packet *pkt, bt_peer_t *peer) {
 void process_GET(packet *pkt, bt_peer_t *peer) {
     sender *sdr = get_sender(sender_pool, peer);
     //来自当前peer的上一个GET请求处理完毕，关闭连接
-    if (sdr != NULL && sdr->last_sent == sdr->pkts->n)
+    if (sdr != NULL && sdr->last_sent == sdr->pkt_num)
         remove_sender(sender_pool, sdr);
+    else if (sdr != NULL)
+        return;
     if (sender_pool->cur_num >= sender_pool->max_num) {
         packet *pkt_denied = make_PKT(DENIED, 0, 0, NULL);
         send_PKT(sock, peer, pkt_denied);
         free_packet(pkt_denied);
     } else {
-        //TODO 生成数据包
-        queue *queue_pkt = get_data_chunk(config.chunk_file, pkt);
-        sender *sdr = add_sender(sender_pool, peer, queue_pkt);
-
+        chunk_t *chunk = get_data_chunk(config.chunk_file, pkt);
+        packet **pkts = chunk2pkts(chunk);
+        sdr = add_sender(sender_pool, peer, pkts);
+        process_sender(sdr);
     }
 }
 
 void process_DATA(packet *pkt, bt_peer_t *peer) {
-    //TODO
+    receiver *rcvr = get_receiver(receiver_pool, peer);
+    if (rcvr == NULL)
+        return;
+    if (pkt->header.seq_num == rcvr->next_expected) {
+        int data_size = pkt->header.total_pkt_len - pkt->header.header_len;
+        memcpy(rcvr->chunk->data + pkt->header.seq_num, pkt->data, (size_t) data_size);
+        rcvr->last_rcvd = rcvr->next_expected;
+        rcvr->next_expected += data_size;
+    }
+    packet *pkt_ack = make_ACK(rcvr->last_rcvd);
+    send_PKT(sock, peer, pkt_ack);
+    start_timer(rcvr->timer, rcvr->next_expected);
+    if (rcvr->next_expected % PKT_SIZE != 0 || rcvr->next_expected > BT_CHUNK_SIZE) {//下载完成
+        update_state(down_chunks, rcvr->chunk, FINISHED);   //更新下载状态为【完成】
+        remove_receiver(receiver_pool, rcvr);
+    }
 }
 
 void process_ACK(packet *pkt, bt_peer_t *peer) {
-    //TODO
+    sender *sdr = get_sender(sender_pool, peer);
+    if (sdr == NULL)
+        return;
+    if (pkt->header.ack_num > (sdr->pkt_num - 1) * PKT_SIZE)//发送完成
+        remove_sender(sender_pool, sdr);
+    if (pkt->header.ack_num > sdr->last_acked) {
+        sdr->last_acked = pkt->header.ack_num;
+        sdr->last_available = sdr->last_acked + sdr->win_size;
+        sdr->dup_ack_num = 1;   //第一次收到（有效）
+    } else if (pkt->header.ack_num == sdr->last_acked) {
+        sdr->dup_ack_num++;
+        if (sdr->dup_ack_num >= DUP_ACK_NUM) {
+            sdr->last_sent = pkt->header.ack_num;
+            sdr->dup_ack_num = 1;
+        }
+    }
 }
 
 void process_DENIED(packet *pkt, bt_peer_t *peer) {
     //rejected
+    //do nothing
 }
