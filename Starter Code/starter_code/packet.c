@@ -12,77 +12,68 @@
 #include <string.h>
 #include <netinet/in.h>
 
-void init(value_type vt, packet *pkt, uint8_t type, uint16_t tot_len,
+void init(packet *pkt, uint8_t type, uint16_t tot_len,
           uint32_t seq, uint32_t ack,
           uint8_t *data) {
+    pkt_header *header = pkt->header;
+    header->magic_num = MAGIC;
+    header->version_num = VERSION;
+    header->packet_type = type;
+    header->header_len = HDR_SIZE;
+    header->total_pkt_len = tot_len;
+    header->ack_num = ack;
+    header->seq_num = seq;
+    memcpy(pkt->data, data, (size_t) (tot_len - HDR_SIZE));
+}
+
+void convert(packet *pkt, value_type vt) {
+    pkt_header *header = pkt->header;
     switch (vt) {
         case HOST:
-            init_host(pkt, MAGIC, VERSION, type, HDR_SIZE, tot_len, seq, ack, data);
+            header->magic_num = ntohs(header->magic_num);
+            header->header_len = ntohs(header->header_len);
+            header->total_pkt_len = ntohs(header->total_pkt_len);
+            header->seq_num = ntohl(header->seq_num);
+            header->ack_num = ntohl(header->ack_num);
             break;
         case NET:
-            init_net(pkt, MAGIC, VERSION, type, HDR_SIZE, tot_len, seq, ack, data);
+            header->magic_num = htons(header->magic_num);
+            header->header_len = htons(header->header_len);
+            header->total_pkt_len = htons(header->total_pkt_len);
+            header->seq_num = htonl(header->seq_num);
+            header->ack_num = htonl(header->ack_num);
             break;
         default:
             break;
     }
 }
 
-void init_host(packet *pkt, uint16_t magic, uint8_t version, uint8_t type,
-               uint16_t hdr_len, uint16_t tot_len,
-               uint32_t seq, uint32_t ack,
-               uint8_t *data) {
-    pkt->header->magic_num = ntohs(magic);
-    pkt->header->version_num = version & 0xff;
-    pkt->header->packet_type = type & 0xff;
-    pkt->header->header_len = ntohs(hdr_len);
-    pkt->header->total_pkt_len = ntohs(tot_len);
-    pkt->header->seq_num = ntohl(seq);
-    pkt->header->ack_num = ntohl(ack);
-    if (data != NULL) {
-        memcpy(pkt->data, data, ntohs(tot_len) - ntohs(hdr_len));
-    }
-}
 
-void init_net(packet *pkt, uint16_t magic, uint8_t version, uint8_t type,
-              uint16_t hdr_len, uint16_t tot_len,
-              uint32_t seq, uint32_t ack,
-              uint8_t *data) {
-    pkt->header->magic_num = htons(magic);
-    pkt->header->version_num = version & 0xff;
-    pkt->header->packet_type = type & 0xff;
-    pkt->header->header_len = htons(hdr_len);
-    pkt->header->total_pkt_len = htons(tot_len);
-    pkt->header->seq_num = htonl(seq);
-    pkt->header->ack_num = htonl(ack);
-    if (data != NULL) {
-        memcpy(pkt->data, data, tot_len - hdr_len);
-    }
-}
-
-packet *make_PKT(value_type host_net, uint8_t type, uint32_t seq_ack, uint32_t data_size, uint8_t *data) {
+packet *make_PKT(uint8_t type, uint32_t seq_ack, uint32_t data_size, uint8_t *data) {
     packet *pkt = (packet *) malloc(sizeof(packet) + data_size);
-    init(host_net, pkt, type, sizeof(pkt), type == DATA ? seq_ack : 0, type == ACK ? seq_ack : 0, data);
+    pkt->data = malloc(data_size);
+    init(pkt, type, sizeof(pkt), type == DATA ? seq_ack : INIT_SEQ, type == ACK ? seq_ack : INIT_ACK, data);
     return pkt;
 }
 
 packet *make_WHOHAS(uint32_t data_size, uint8_t *data) {
-    return make_PKT(NET, WHOHAS, 0, data_size, data);
+    return make_PKT(WHOHAS, 0, data_size, data);
 }
 
 packet *make_IHAVE(uint32_t data_size, uint8_t *data) {
-    return make_PKT(NET, IHAVE, 0, data_size, data);
+    return make_PKT(IHAVE, 0, data_size, data);
 }
 
 packet *make_GET(uint8_t *data) {
-    return make_PKT(NET, GET, 0, SHA1_HASH_SIZE, data);
+    return make_PKT(GET, 0, SHA1_HASH_SIZE, data);
 }
 
 packet *make_DATA(uint32_t seq_ack, uint32_t data_size, uint8_t *data) {
-    return make_PKT(NET, DATA, seq_ack, data_size, data);
+    return make_PKT(DATA, seq_ack, data_size, data);
 }
 
 packet *make_ACK(uint32_t seq_ack) {
-    return make_PKT(NET, ACK, seq_ack, 0, NULL);
+    return make_PKT(ACK, seq_ack, 0, NULL);
 }
 
 pkt_type pkt_parse_type(uint8_t type) {
@@ -100,6 +91,11 @@ pkt_type pkt_parse_type(uint8_t type) {
         case 5:
             return DENIED;
         default:
-            return NULL;
+            break;
     }
+}
+
+void free_packet(packet *pkt) {
+    free(pkt->header);
+    free(pkt->data);
 }

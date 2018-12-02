@@ -21,7 +21,7 @@
 #define INIT_SEQ 0
 #define INIT_ACK 0
 
-#define pkt_parse(pkt) pkt_parse_type(pkt->header->packet_type)
+#define pkt_parse(pkt) pkt_parse_type((pkt)->header->packet_type)
 
 typedef enum {
     HOST, NET
@@ -61,19 +61,17 @@ typedef struct {
 
 typedef struct {
     pkt_header *header;
-    uint8_t data[0];
+    uint8_t *data;
 } packet;
 
 /**
  * magic_num = MAGIC, version_num = VERSION, header_len = HDR_SIZE
  */
-void init(value_type, packet *, uint8_t, uint16_t, uint32_t, uint32_t, uint8_t *);
+void init(packet *, uint8_t, uint16_t, uint32_t, uint32_t, uint8_t *);
 
-void init_host(packet *, uint16_t, uint8_t, uint8_t, uint16_t, uint16_t, uint32_t, uint32_t, uint8_t *);
+packet *make_PKT(uint8_t type, uint32_t seq_ack, uint32_t data_size, uint8_t *data);
 
-void init_net(packet *, uint16_t, uint8_t, uint8_t, uint16_t, uint16_t, uint32_t, uint32_t, uint8_t *);
-
-packet *make_PKT(value_type host_net, uint8_t type, uint32_t seq_ack, uint32_t data_size, uint8_t *data);
+void convert(packet *, value_type);
 
 /**
  * WHOHAS contains:
@@ -109,4 +107,6 @@ packet *make_ACK(uint32_t seq_ack);
 
 pkt_type pkt_parse_type(uint8_t type);
 
-#endif; //A_BITTORRENT_LIKE_FILE_TRANSFER_APPLICATION_PACKET_H
+void free_packet(packet *pkt);
+
+#endif //A_BITTORRENT_LIKE_FILE_TRANSFER_APPLICATION_PACKET_H
