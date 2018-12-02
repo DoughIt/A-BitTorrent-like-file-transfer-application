@@ -6,29 +6,27 @@
  */
 #ifndef A_BITTORRENT_LIKE_FILE_TRANSFER_APPLICATION_QUEUE_H
 #define A_BITTORRENT_LIKE_FILE_TRANSFER_APPLICATION_QUEUE_H
-
-#include "sha.h"
-
-typedef enum state {
-    DONE, UNDONE, VALID, INVALID
-} state;
-
 typedef struct node {
-    state flag;
-    uint32_t seq;
-    SHA1Context sha1;
-    node *next;
+    void *data;
+    struct node *next;
 } node;
 
 typedef struct queue {
     node *head;
     node *tail;
+    int n;
 } queue;
 
 void init_queue(queue *);
 
-void enqueue(queue *, node *);
+void enqueue(queue *, void *);
 
-node *dequeue(queue *);
+void *dequeue(queue *);
 
-#endif; //A_BITTORRENT_LIKE_FILE_TRANSFER_APPLICATION_QUEUE_H
+int is_empty(queue *);
+
+int enqueue_all(queue *, queue *);
+
+void free_queue(queue *);
+
+#endif //A_BITTORRENT_LIKE_FILE_TRANSFER_APPLICATION_QUEUE_H
