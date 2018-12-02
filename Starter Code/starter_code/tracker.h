@@ -21,6 +21,7 @@ typedef enum chunk_state {
 } chunk_state;
 
 typedef struct chunk_s {
+    int id;
     char sha1[255];
     chunk_state c_state;
     queue *holders;
@@ -81,6 +82,13 @@ queue *pkt2chunks(packet *pkt, pkt_type type);
 
 
 queue *which_i_have(queue *who_has_chunks, char *has_chunk_file);
+
+/**
+ * Convert chunk to DATA packets
+ * @param data_chunk
+ * @return
+ */
+packet **chunk2pkts(chunk_t *data_chunk);
 
 chunk_t *get_data_chunk(char *chunkfile, packet *pkt);
 

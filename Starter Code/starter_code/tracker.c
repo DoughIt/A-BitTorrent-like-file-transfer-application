@@ -10,6 +10,7 @@
 #include <string.h>
 
 void init_chunk(chunk_t *chunk, char *sha1) {
+    chunk->id = 0;
     memcpy(chunk->sha1, sha1, 255);
     chunk->holders = malloc(sizeof(queue));
     init_queue(chunk->holders);
@@ -18,7 +19,6 @@ void init_chunk(chunk_t *chunk, char *sha1) {
 
 void free_chunk(chunk_t *chunk) {
     free(chunk->holders);
-    free(chunk->sha1);
     free(chunk);
 }
 
@@ -75,12 +75,11 @@ void scan_chunk_done(queue *down_chunks, queue *done_chunks) {
         init_queue(done_chunks);
     }
     int n = down_chunks->n;
-    node *cur_node;
     for (int i = 0; i < n; ++i) {
-        cur_node = dequeue(down_chunks);
-        if (((chunk_t *) cur_node->data)->c_state == FINISHED) {
-            enqueue(done_chunks, cur_node->data);
-        } else enqueue(down_chunks, cur_node->data);
+        chunk_t *chunk = (chunk_t *) dequeue(down_chunks);
+        if (chunk->c_state == FINISHED) {
+            enqueue(done_chunks, chunk);
+        } else enqueue(down_chunks, chunk);
     }
 }
 
@@ -91,10 +90,10 @@ queue *list_chunks(char *chunkfile) {
     queue *chunks = (queue *) malloc(sizeof(queue));
     init_queue(chunks);
     char line[TRACKER_LINE_LEN] = {0};
-    int id;
     while (!feof(fp) && fgets(line, TRACKER_LINE_LEN, fp) != NULL) {
         chunk_t *chunk = malloc(sizeof(chunk_t));
-        sscanf(line, "%d %s", &id, chunk->sha1);
+        memset(chunk, 0, sizeof(chunk_t));
+        sscanf(line, "%d %s", &chunk->id, chunk->sha1);
         init_chunk(chunk, chunk->sha1);
         enqueue(chunks, chunk);
     }
@@ -106,9 +105,9 @@ chunk_t *contains_chunk(queue *chunks, chunk_t *chunk) {
     if (chunks == NULL || chunk == NULL)
         return NULL;
     node *cur_node = chunks->head;
-    while (cur_node != NULL) {
+    while (cur_node) {
         chunk_t *cur_chunk = (chunk_t *) cur_node->data;
-        if (memcmp(chunk->sha1, cur_chunk->sha1, SHA1_HASH_SIZE) == 0)
+        if (memcmp(chunk->sha1, cur_chunk->sha1, 2 * SHA1_HASH_SIZE) == 0)
             return cur_chunk;
         cur_node = cur_node->next;
     }
@@ -124,23 +123,25 @@ queue *chunks2pkts(queue *chunks, pkt_type type) {
     node *cur_node = chunks->head;
     chunk_t *chunk;
     int num = chunks->n / SHA_MAX_NUM + (chunks->n % SHA_MAX_NUM > 0);
-    int sha1_num;   /**< The number of each packet's hash value**/
+    char sha1_num;  //每个packet包含的hash数
     for (int i = 0; i < num; ++i) {
         if (i < num - 1)
             sha1_num = SHA_MAX_NUM;
-        else sha1_num = chunks->n % SHA_MAX_NUM;
-        int data_size = 4 + SHA1_HASH_SIZE * i;
+        else sha1_num = (char) (chunks->n % SHA_MAX_NUM);
+        int data_size = 4 + SHA1_HASH_SIZE * sha1_num;
         uint8_t *data = (uint8_t *) malloc((size_t) data_size);
-        // The number of chunk hashes(1 byte), 3 bytes of empty padding space
-        memcpy(data, (const void *) (sha1_num & 0xff), 1);
-        // The list of hashs (20 bytes each)
-        for (int idx = 0; idx <= sha1_num && cur_node != NULL; idx++, cur_node = cur_node->next) {
+        memset(data, 0, (size_t) data_size);
+        // hash值数量（1字节），4 字节对齐
+        memcpy(data, &sha1_num, 1);
+        // hash值列表（每个20字节）
+        uint8_t *bin_sha1 = malloc(SHA1_HASH_SIZE);
+        memset(bin_sha1, 0, SHA1_HASH_SIZE);
+        for (int idx = 0; idx < sha1_num && cur_node != NULL; idx++, cur_node = cur_node->next) {
             if ((chunk = (chunk_t *) cur_node->data) != NULL) {
-                char *hex_sha1 = chunk->sha1;
-                uint8_t *bin_sha1 = (uint8_t *) malloc(SHA1_HASH_SIZE);
-                ascii2hex(hex_sha1, sizeof(hex_sha1), bin_sha1);
+                hex2binary(chunk->sha1, 2 * SHA1_HASH_SIZE, bin_sha1);//hex_sha1的有效部分占40字节
                 memcpy(data + 4 + idx * SHA1_HASH_SIZE, bin_sha1, SHA1_HASH_SIZE);
-            }
+            } else
+                break;
         }
         packet *pkt = make_PKT(type, 0, (uint32_t) data_size, data);
         enqueue(pkts, pkt);
@@ -155,15 +156,15 @@ queue *pkt2chunks(packet *pkt, pkt_type type) {
     init_queue(chunks);
     chunk_t *chunk;
     uint8_t *data = pkt->data;
-    int sha1_num;
+    char sha1_num;
     memcpy(&sha1_num, data, 1);
+    uint8_t bin_sha1[SHA1_HASH_SIZE];
     for (int i = 0; i < sha1_num; ++i) {
-        char hex_sha1[255];
-        uint8_t bin_sha1[SHA1_HASH_SIZE];
-        memcpy(bin_sha1, data + 4 + i * SHA1_HASH_SIZE, SHA1_HASH_SIZE);
-        hex2ascii(bin_sha1, SHA1_HASH_SIZE, hex_sha1);
         chunk = (chunk_t *) malloc(sizeof(chunk_t));
-        init_chunk(chunk, hex_sha1);
+        memset(chunk, 0, sizeof(chunk_t));
+        memcpy(bin_sha1, data + 4 + i * SHA1_HASH_SIZE, SHA1_HASH_SIZE);
+        binary2hex(bin_sha1, SHA1_HASH_SIZE, chunk->sha1);
+        init_chunk(chunk, chunk->sha1);
         enqueue(chunks, chunk);
     }
     return chunks;
@@ -172,15 +173,33 @@ queue *pkt2chunks(packet *pkt, pkt_type type) {
 queue *which_i_have(queue *who_has_chunks, char *has_chunk_file) {
     queue *chunks = list_chunks(has_chunk_file);
     queue *i_have_chunks = (queue *) malloc(sizeof(queue));
+    init_queue(i_have_chunks);
     node *cur_node = who_has_chunks->head;
-    while (cur_node != NULL) {
-        if (contains_chunk(chunks, (chunk_t *) cur_node->data) != NULL)
+    while (cur_node) {
+        if (contains_chunk(chunks, (chunk_t *) cur_node->data)) {
             enqueue(i_have_chunks, cur_node->data);
+        }
         cur_node = cur_node->next;
     }
     return i_have_chunks;
 }
 
+packet **chunk2pkts(chunk_t *data_chunk) {
+    char *data = data_chunk->data;
+    int num = sizeof(data) / BT_CHUNK_SIZE + (sizeof(data) % BT_CHUNK_SIZE > 0);
+    packet *pkt;
+    packet **pkts = malloc(num * sizeof(packet *));
+    int i;
+    for (i = 0; i < num - 1; ++i) {
+        uint8_t pkt_data[DATA_SIZE];
+        memcpy(pkt_data, data + i * DATA_SIZE, DATA_SIZE);
+        pkt = make_DATA((uint32_t) (i * DATA_SIZE), DATA_SIZE, pkt_data);
+        pkts[i] = pkt;
+    }
+    pkt = make_DATA((uint32_t) (i * DATA_SIZE), sizeof(data) % BT_CHUNK_SIZE, (uint8_t *) (data + i * DATA_SIZE));
+    pkts[i] = pkt;
+    return pkts;
+}
 
 chunk_t *get_data_chunk(char *chunkfile, packet *pkt) {
     FILE *fp = fopen(chunkfile, "r");
@@ -197,19 +216,21 @@ chunk_t *get_data_chunk(char *chunkfile, packet *pkt) {
 
     chunk_t *data_chunk = malloc(sizeof(chunk_t));
     init_chunk(data_chunk, "");
-    int id = -1;
-
     while (!feof(fp) && fgets(line, TRACKER_LINE_LEN, fp) != NULL) {
-        sscanf(line, "%d %s", &id, data_chunk->sha1);
+        sscanf(line, "%d %s", &data_chunk->id, data_chunk->sha1);
         if (memcmp(sha1, data_chunk->sha1, 255) == 0)
             break;
     }
     fclose(fp);
     fp = fopen(file_name, "r");
-    fseek(fp, id * BT_CHUNK_SIZE, SEEK_SET);//定位读指针起始位置
+    fseek(fp, data_chunk->id * BT_CHUNK_SIZE, SEEK_SET);//定位读指针起始位置
     fread(data_chunk->data, BT_CHUNK_SIZE, 1, fp);
     fclose(fp);
     return data_chunk;
 }
 
-int check_chunk(chunk_t *chunk, char *sha1);
+int check_chunk(chunk_t *chunk, char *sha1) {
+    uint8_t target[2 * SHA1_HASH_SIZE];
+    shahash((uint8_t *) chunk->data, sizeof(chunk->data), target);
+    return memcmp(target, sha1, 2 * SHA1_HASH_SIZE) == 0;
+}
