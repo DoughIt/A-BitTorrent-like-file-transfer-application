@@ -15,7 +15,7 @@
 void init(packet *pkt, uint8_t type, uint16_t tot_len,
           uint32_t seq, uint32_t ack,
           uint8_t *data) {
-    pkt_header *header = pkt->header;
+    pkt_header *header = &pkt->header;
     header->magic_num = MAGIC;
     header->version_num = VERSION;
     header->packet_type = type;
@@ -27,7 +27,7 @@ void init(packet *pkt, uint8_t type, uint16_t tot_len,
 }
 
 void convert(packet *pkt, value_type vt) {
-    pkt_header *header = pkt->header;
+    pkt_header *header = &pkt->header;
     switch (vt) {
         case HOST:
             header->magic_num = ntohs(header->magic_num);
@@ -50,9 +50,9 @@ void convert(packet *pkt, value_type vt) {
 
 
 packet *make_PKT(uint8_t type, uint32_t seq_ack, uint32_t data_size, uint8_t *data) {
-    packet *pkt = (packet *) malloc(sizeof(packet) + data_size);
-    pkt->data = malloc(data_size);
-    init(pkt, type, sizeof(pkt), type == DATA ? seq_ack : INIT_SEQ, type == ACK ? seq_ack : INIT_ACK, data);
+    packet *pkt = (packet *) malloc(HDR_SIZE + data_size);
+    init(pkt, type, (uint16_t) (HDR_SIZE + data_size), type == DATA ? seq_ack : INIT_SEQ,
+         type == ACK ? seq_ack : INIT_ACK, data);
     return pkt;
 }
 
@@ -96,6 +96,5 @@ pkt_type pkt_parse_type(uint8_t type) {
 }
 
 void free_packet(packet *pkt) {
-    free(pkt->header);
     free(pkt->data);
 }

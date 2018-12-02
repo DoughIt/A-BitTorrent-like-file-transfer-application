@@ -21,7 +21,7 @@
 #define INIT_SEQ 0
 #define INIT_ACK 0
 
-#define pkt_parse(pkt) pkt_parse_type((pkt)->header->packet_type)
+#define pkt_parse(pkt) pkt_parse_type((pkt)->header.packet_type)
 
 typedef enum {
     HOST, NET
@@ -60,8 +60,8 @@ typedef struct {
 } pkt_header;
 
 typedef struct {
-    pkt_header *header;
-    uint8_t *data;
+    pkt_header header;
+    uint8_t data[0];
 } packet;
 
 /**
