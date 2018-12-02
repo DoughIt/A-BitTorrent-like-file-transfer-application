@@ -145,17 +145,6 @@ void bt_parse_peer_list(bt_config_t *config) {
     }
 }
 
-bt_peer_t *get_peer(const bt_config_t *config, struct sockaddr_in addr) {
-    assert(config != NULL);
-    bt_peer_t *p;
-    for (p = config->peers; p != NULL; p = p->next) {
-        if (p->addr.sin_port == addr.sin_port) {
-            return p;
-        }
-    }
-    return NULL;
-}
-
 void bt_dump_config(bt_config_t *config) {
     /* Print out the results of the parsing. */
     bt_peer_t *p;

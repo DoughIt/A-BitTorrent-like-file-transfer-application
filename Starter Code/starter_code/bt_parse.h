@@ -41,6 +41,4 @@ void bt_dump_config(bt_config_t *c);
 
 bt_peer_t *bt_peer_info(const bt_config_t *c, int peer_id);
 
-bt_peer_t *get_peer(const bt_config_t *config, struct sockaddr_in addr);
-
 #endif /* _BT_PARSE_H_ */
