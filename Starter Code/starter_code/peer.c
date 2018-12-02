@@ -25,6 +25,7 @@
 #include "handler.h"
 
 bt_config_t config;
+int sock;
 
 void peer_run(bt_config_t *config);
 
@@ -37,7 +38,7 @@ int main(int argc, char **argv) {
     DPRINTF(DEBUG_INIT, "peer.c main beginning\n");
 
 #ifdef TESTING
-    config.identity = 16302010059; // your student number here
+    config.identity = 1; // your student number here
     strcpy(config.chunk_file, "chunkfile");
     strcpy(config.has_chunk_file, "haschunks");
 #endif
@@ -64,8 +65,7 @@ void process_inbound_udp(int sock) {
     fromlen = sizeof(from);
     if (spiffy_recvfrom(sock, buf, BUFLEN, 0, (struct sockaddr *) &from, &fromlen) != -1) {
         packet *pkt = (packet *) buf;
-        bt_peer_t *peer = get_peer(&config, from);
-        process_PKT(pkt, peer);
+        process_PKT(pkt, from);
     }
 //    printf("PROCESS_INBOUND_UDP SKELETON -- replace!\n"
 //                   "Incoming message from %s:%d\n%s\n\n",
@@ -77,7 +77,9 @@ void process_inbound_udp(int sock) {
 void process_get(char *chunkfile, char *outputfile) {
     printf("PROCESS GET SKELETON CODE CALLED.  Fill me in!  (%s, %s)\n",
            chunkfile, outputfile);
-    //TODO
+    strcpy(config.chunk_file, chunkfile);
+    strcpy(config.output_file, outputfile);
+    process_download(config, sock);
 }
 
 void handle_user_input(char *line, void *cbdata) {
@@ -95,7 +97,6 @@ void handle_user_input(char *line, void *cbdata) {
 
 
 void peer_run(bt_config_t *config) {
-    int sock;
     struct sockaddr_in myaddr;
     fd_set readfds;
     struct user_iobuf *userbuf;
