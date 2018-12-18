@@ -14,7 +14,7 @@
 
 #define PKT_SIZE 1500      /**< The maximum packet size for UDP is 1500 bytes. **/
 #define HDR_SIZE 16        /**< The header length. **/
-#define DATA_SIZE (PKT_SIZE - HDR_SIZE)   /**< The maximum data size. **/
+#define DATA_SIZE 1400   /**< The maximum data size. **/
 
 #define MAGIC 15441        /**< The magic number should be 15441 **/
 #define VERSION 1          /**< The version number should be 1 **/
@@ -107,6 +107,5 @@ packet *make_ACK(uint32_t seq_ack);
 
 pkt_type pkt_parse_type(uint8_t type);
 
-void free_packet(packet *pkt);
 
 #endif //A_BITTORRENT_LIKE_FILE_TRANSFER_APPLICATION_PACKET_H

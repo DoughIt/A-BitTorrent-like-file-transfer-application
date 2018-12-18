@@ -94,7 +94,3 @@ pkt_type pkt_parse_type(uint8_t type) {
             break;
     }
 }
-
-void free_packet(packet *pkt) {
-    free(pkt->data);
-}

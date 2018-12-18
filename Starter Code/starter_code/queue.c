@@ -27,7 +27,7 @@ void enqueue(queue *queue1, void *data) {
 }
 
 void *dequeue(queue *queue1) {
-    if (queue1->n <= 0)
+    if (queue1 == NULL || queue1->n <= 0)
         return NULL;
     node *head = queue1->head;
     void *data = head->data;

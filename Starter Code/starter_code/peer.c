@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "debug.h"
 #include "spiffy.h"
 #include "bt_parse.h"
@@ -65,13 +66,8 @@ void process_inbound_udp(int sock) {
     fromlen = sizeof(from);
     if (spiffy_recvfrom(sock, buf, BUFLEN, 0, (struct sockaddr *) &from, &fromlen) != -1) {
         packet *pkt = (packet *) buf;
-        process_PKT(pkt, from);
+        process_PKT(pkt, &from);
     }
-//    printf("PROCESS_INBOUND_UDP SKELETON -- replace!\n"
-//                   "Incoming message from %s:%d\n%s\n\n",
-//           inet_ntoa(from.sin_addr),
-//           ntohs(from.sin_port),
-//           buf);
 }
 
 void process_get(char *chunkfile, char *outputfile) {
@@ -79,7 +75,7 @@ void process_get(char *chunkfile, char *outputfile) {
            chunkfile, outputfile);
     strcpy(config.chunk_file, chunkfile);
     strcpy(config.output_file, outputfile);
-    process_download(config, sock);
+    process_download();
 }
 
 void handle_user_input(char *line, void *cbdata) {
@@ -123,6 +119,7 @@ void peer_run(bt_config_t *config) {
 
     spiffy_init(config->identity, (struct sockaddr *) &myaddr, sizeof(myaddr));
 
+
     while (1) {
         int nfds;
         FD_SET(STDIN_FILENO, &readfds);
@@ -139,6 +136,7 @@ void peer_run(bt_config_t *config) {
                 process_user_input(STDIN_FILENO, userbuf, handle_user_input,
                                    "Currently unused");
             }
-        }
+        } else if (nfds < 0)
+            break;
     }
 }

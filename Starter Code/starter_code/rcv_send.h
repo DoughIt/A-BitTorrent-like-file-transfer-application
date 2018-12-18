@@ -9,16 +9,26 @@
 #define BITTORRECT_LIKE_RCV_SEND_H
 
 #include <inttypes.h>
-#include "timer.h"
 #include "tracker.h"
 
 #define GET_NUM 6          /**< The maximum number of GET requests that a peer can tackle **/
 #define WINDOW_SIZE 8      /**< Sliding window size **/
 #define DUP_ACK_NUM 3      /**< To avoid confusion from re-ordering, a sender counts a packet lost only after 3 duplicate ACKs in a row **/
 
+#define ALPHA 0.125
+#define BETA 0.25
+
 typedef enum state {
     DONE, UNDONE, VALID, INVALID
 } state;
+
+
+typedef struct my_timer_s {
+    int running;
+    uint32_t id;
+    struct timeval timeout;
+} my_timer_t;
+
 
 typedef struct sender_s {
     uint32_t win_size;      /**< last_sent - last_acked <= win_size **/
@@ -68,4 +78,15 @@ void remove_sender(sender_pool_t *sender_pool, sender *sdr);
 
 void remove_receiver(receiver_pool_t *receiver_pool, receiver *rcvr);
 
+void redo(sender *sdr, uint32_t last_acked);
+
+int is_running(my_timer_t *);
+
+void init_timer(my_timer_t *, uint32_t);
+
+void start_timer(sender *);
+
+void stop_timer(sender *);
+
+void update(float);
 #endif //BITTORRECT_LIKE_RCV_SEND_H

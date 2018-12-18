@@ -13,7 +13,7 @@
 #include "queue.h"
 #include "packet.h"
 
-#define TRACKER_LINE_LEN 64
+#define TRACKER_LINE_LEN 255
 #define SHA_MAX_NUM ((PKT_SIZE - HDR_SIZE - 4)/SHA1_HASH_SIZE)    // 74
 
 typedef enum chunk_state {
@@ -28,7 +28,7 @@ typedef struct chunk_s {
     char data[BT_CHUNK_SIZE];
 } chunk_t;
 
-void init_chunk(chunk_t *chunk, char *sha1);
+void init_chunk(chunk_t *chunk, int id, char *sha1);
 
 void free_chunk(chunk_t *chunk);
 

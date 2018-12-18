@@ -7,17 +7,23 @@
 
 #include "rcv_send.h"
 #include <malloc.h>
+#include <math.h>
+#include <pthread.h>
+
+double timeout_interval = 2000, dev_rtt = 0, estimated_rtt = 0, sample_rtt = 0;
 
 void init_sender_pool(sender_pool_t *sender_pool, int max) {
     sender_pool->max_num = max;
     sender_pool->cur_num = 0;
     sender_pool->workers = malloc(max * sizeof(sender));
+    init_queue(sender_pool->workers);
 }
 
 void init_receiver_pool(receiver_pool_t *receiver_pool, int max) {
     receiver_pool->max_num = max;
     receiver_pool->cur_num = 0;
     receiver_pool->workers = malloc(max * sizeof(receiver));
+    init_queue(receiver_pool->workers);
 }
 
 sender *add_sender(sender_pool_t *sender_pool, bt_peer_t *p_rcvr, packet **pkts) {
@@ -31,9 +37,10 @@ sender *add_sender(sender_pool_t *sender_pool, bt_peer_t *p_rcvr, packet **pkts)
     sdr->last_available = WINDOW_SIZE;
     sdr->dup_ack_num = 0;
     sdr->pkts = pkts;
-    sdr->pkt_num = sizeof(pkts) / (DATA_SIZE + HDR_SIZE) + (sizeof(pkts) % (DATA_SIZE + HDR_SIZE) != 0);
+    sdr->pkt_num = (uint32_t) (BT_CHUNK_SIZE / DATA_SIZE + (BT_CHUNK_SIZE % DATA_SIZE >
+                                                            0)) /*sizeof(pkts) / (DATA_SIZE + HDR_SIZE) + (sizeof(pkts) % (DATA_SIZE + HDR_SIZE) != 0)*/;
     sdr->timer = (my_timer_t *) malloc(sizeof(my_timer_t));
-    init_timer(sdr->timer);
+    init_timer(sdr->timer, sdr->last_acked);
     enqueue(sender_pool->workers, sdr);
     sender_pool->cur_num++;
     return sdr;
@@ -49,7 +56,7 @@ receiver *add_receiver(receiver_pool_t *receiver_pool, bt_peer_t *p_sdr, chunk_t
     rcvr->chunk = chunk;
     rcvr->p_sender = p_sdr;
     rcvr->timer = malloc(sizeof(my_timer_t));
-    init_timer(rcvr->timer);
+    init_timer(rcvr->timer, rcvr->last_rcvd);
     enqueue(receiver_pool->workers, rcvr);
     receiver_pool->cur_num++;
     return rcvr;
@@ -74,8 +81,9 @@ receiver *get_receiver(receiver_pool_t *rcvr_pool, bt_peer_t *p_sdr) {
     queue *rcvrs = rcvr_pool->workers;
     node *cur_node = rcvrs->head;
     while (cur_node) {
-        if (((receiver *) cur_node->data)->p_sender == p_sdr)
+        if (((receiver *) cur_node->data)->p_sender == p_sdr) {
             return (receiver *) cur_node->data;
+        }
         cur_node = cur_node->next;
     }
     return NULL;
@@ -89,6 +97,7 @@ void remove_sender(sender_pool_t *sender_pool, sender *sdr) {
     for (int i = 0; i < n; ++i) {
         cur_sender = dequeue(sender_pool->workers);
         if (cur_sender->p_receiver == sdr->p_receiver) {
+            sdr->timer->running = 0;
             sender_pool->cur_num--;
             return;
         }
@@ -104,9 +113,60 @@ void remove_receiver(receiver_pool_t *receiver_pool, receiver *rcvr) {
     for (int i = 0; i < n; ++i) {
         cur_receiver = dequeue(receiver_pool->workers);
         if (cur_receiver->p_sender == rcvr->p_sender) {
+            rcvr->timer->running = 0;
             receiver_pool->cur_num--;
             return;
         }
         enqueue(receiver_pool->workers, cur_receiver);
     }
+}
+
+void redo(sender *sdr, uint32_t last_acked) {
+    sdr->last_sent = last_acked;
+    sdr->last_acked = last_acked;
+    sdr->dup_ack_num = 0;
+    sdr->last_available = sdr->last_sent + sdr->win_size;
+}
+
+
+int is_running(my_timer_t *timer) {
+    return timer->running == 1;
+}
+
+void init_timer(my_timer_t *timer, uint32_t id) {
+    timer->running = 0;
+    timer->id = id;
+    timer->timeout.tv_sec = (__time_t) (timeout_interval / 1000);
+    timer->timeout.tv_usec = 0;
+}
+
+void *t_start(sender *sdr) {
+    uint32_t id = sdr->timer->id;
+    if (is_running(sdr->timer) && select(0, NULL, NULL, NULL, &sdr->timer->timeout) == 0) {
+        if (sdr->timer->id == id && sdr->dup_ack_num <= 1) {//判断当前计时段内计时器是否被重启过，如重启过则该次计时失效
+            puts("Timeout");
+            redo(sdr, id);
+        }
+    }
+    return NULL;
+}
+
+void start_timer(sender *sdr) {
+    if (sdr == NULL)
+        return;
+    sdr->timer->running = 1;
+    pthread_t t_timeout;
+    pthread_create(&t_timeout, NULL, (void *(*)(void *)) t_start, sdr);
+}
+
+void stop_timer(sender *sdr) {
+    if (sdr == NULL)
+        return;
+    sdr->timer->running = 0;
+}
+
+void update(float sample_rtt) {
+    estimated_rtt = (1 - ALPHA) * estimated_rtt + ALPHA * sample_rtt;
+    dev_rtt = (1 - BETA) * dev_rtt + BETA * fabs(sample_rtt - estimated_rtt);
+    timeout_interval = estimated_rtt + 4 * dev_rtt;
 }
