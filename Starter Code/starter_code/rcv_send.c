@@ -31,10 +31,11 @@ sender *add_sender(sender_pool_t *sender_pool, bt_peer_t *p_rcvr, packet **pkts,
         return NULL;
     sender *sdr = malloc(sizeof(sender));
     sdr->p_receiver = p_rcvr;
-    sdr->win_size = WINDOW_SIZE;
+    sdr->ssthresh = SSTHRESH;
+    sdr->cwnd = CWND;
     sdr->last_sent = 0;
     sdr->last_acked = 0;
-    sdr->last_available = WINDOW_SIZE;
+    sdr->last_available = CWND;
     sdr->dup_ack_num = 0;
     sdr->pkts = pkts;
     sdr->pkt_num = (uint32_t) num;
@@ -54,8 +55,6 @@ receiver *add_receiver(receiver_pool_t *receiver_pool, bt_peer_t *p_sdr, chunk_t
     rcvr->next_expected = 1;
     rcvr->chunk = chunk;
     rcvr->p_sender = p_sdr;
-    rcvr->timer = malloc(sizeof(my_timer_t));
-    init_timer(rcvr->timer, rcvr->last_rcvd);
     enqueue(receiver_pool->workers, rcvr);
     receiver_pool->cur_num++;
     return rcvr;
@@ -112,7 +111,6 @@ void remove_receiver(receiver_pool_t *receiver_pool, receiver *rcvr) {
     for (int i = 0; i < n; ++i) {
         cur_receiver = dequeue(receiver_pool->workers);
         if (cur_receiver->p_sender == rcvr->p_sender) {
-            rcvr->timer->running = 0;
             receiver_pool->cur_num--;
             return;
         }
@@ -123,8 +121,10 @@ void remove_receiver(receiver_pool_t *receiver_pool, receiver *rcvr) {
 void redo(sender *sdr, uint32_t last_acked) {
     sdr->last_sent = last_acked;
     sdr->last_acked = last_acked;
+    sdr->ssthresh = (uint32_t) (sdr->cwnd / 2);
+    sdr->cwnd = sdr->ssthresh + DUP_ACK_NUM;
     sdr->dup_ack_num = 1;
-    sdr->last_available = sdr->last_sent + sdr->win_size;
+    sdr->last_available = (uint32_t) (sdr->last_sent + sdr->cwnd);
 }
 
 
@@ -135,7 +135,7 @@ int is_running(my_timer_t *timer) {
 void init_timer(my_timer_t *timer, uint32_t id) {
     timer->running = 0;
     timer->id = id;
-    timer->timeout.tv_sec = (__time_t)(timeout_interval / 1000);
+    timer->timeout.tv_sec = (__time_t) (timeout_interval / 1000);
     timer->timeout.tv_usec = 0;
 }
 

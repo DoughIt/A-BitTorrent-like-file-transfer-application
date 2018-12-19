@@ -11,9 +11,10 @@
 #include <inttypes.h>
 #include "tracker.h"
 
-#define GET_NUM 6          /**< The maximum number of GET requests that a peer can tackle **/
-#define WINDOW_SIZE 8      /**< Sliding window size **/
-#define DUP_ACK_NUM 3      /**< To avoid confusion from re-ordering, a sender counts a packet lost only after 3 duplicate ACKs in a row **/
+#define GET_NUM 6           /** The maximum number of GET requests that a peer can tackle **/
+#define SSTHRESH 8          /** Default ssthresh value **/
+#define CWND 1              /** Default cwnd value **/
+#define DUP_ACK_NUM 3       /** To avoid confusion from re-ordering, a sender counts a packet lost only after 3 duplicate ACKs in a row **/
 
 #define ALPHA 0.125
 #define BETA 0.25
@@ -31,7 +32,8 @@ typedef struct my_timer_s {
 
 
 typedef struct sender_s {
-    uint32_t win_size;      /**< last_sent - last_acked <= win_size **/
+    uint32_t ssthresh;
+    float cwnd;        /**< last_sent - last_acked <= cwnd **/
     uint32_t last_sent;
     uint32_t last_acked;
     uint32_t last_available;
@@ -46,7 +48,6 @@ typedef struct receiver_s {
     uint32_t last_read;
     uint32_t last_rcvd;
     uint32_t next_expected;
-    my_timer_t *timer;
     chunk_t *chunk;
     bt_peer_t *p_sender;
 } receiver;
@@ -89,4 +90,5 @@ void start_timer(sender *);
 void stop_timer(sender *);
 
 void update(float);
+
 #endif //BITTORRECT_LIKE_RCV_SEND_H

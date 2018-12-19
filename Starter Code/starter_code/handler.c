@@ -147,7 +147,7 @@ void *process_sender(sender *sdr) {
         timer.tv_usec = 1;
         if (select(0, NULL, NULL, NULL, &timer) >= 0) {
             if (sdr->last_sent < sdr->last_available && sdr->last_sent < sdr->pkt_num) {//不断检测是否有空闲窗口，若有则发送数据包
-                if (sdr->last_sent == sdr->last_acked) { //
+                if (sdr->last_sent == sdr->last_acked) { //对发送窗口的第一个数据包设置计时器
                     init_timer(sdr->timer, sdr->last_acked);
                     start_timer(sdr);
                 }
@@ -162,8 +162,6 @@ void *process_sender(sender *sdr) {
 }
 
 void process_download() {
-    if (config.chunk_file == NULL || config.output_file == NULL)
-        return;
     receiver_pool = malloc(sizeof(receiver_pool_t));
     init_receiver_pool(receiver_pool, config.max_conn);
 
@@ -216,7 +214,7 @@ void process_PKT(packet *pkt, struct sockaddr_in *from) {
             process_GET(pkt, peer);
             break;
         case ACK:
-            puts("Received ACK");
+//            puts("Received ACK");
             process_ACK(pkt, peer);
             break;
         case DATA:
@@ -283,13 +281,18 @@ void process_GET(packet *pkt, bt_peer_t *peer) {
         int num = 0;
         packet **pkts = chunk2pkts(chunk, &num);
         sdr = add_sender(sender_pool, peer, pkts, num);//建立连接，调用process_sender处理数据包
-//        process_sender(sdr);
+
+        pthread_t p_tracer;
+        if (pthread_create(&p_tracer, NULL, (void *(*)(void *)) trace_cwnd, sdr) == -1) {
+            exit(-1);
+        }
+
         pthread_t t_sender;
         if (pthread_create(&t_sender, NULL, (void *(*)(void *)) process_sender, sdr) == -1) {
             puts("Fail to upload！");
             exit(-1);
         }
-//        void *res;
+//       void *res;
 //        if (pthread_join(t_sender, &res) == -1) {
 //            exit(-1);
 //        }
@@ -308,7 +311,6 @@ void process_DATA(packet *pkt, bt_peer_t *peer) {
     }
     packet *pkt_ack = make_ACK(rcvr->last_rcvd);
     send_PKT(sock, peer, pkt_ack);
-//    start_timer(rcvr->timer);
     if (rcvr->last_rcvd * DATA_SIZE >= BT_CHUNK_SIZE) {//下载完成
         update_state(down_chunks, rcvr->chunk, FINISHED);   //更新下载状态为【完成】
         remove_receiver(receiver_pool, rcvr);
@@ -321,7 +323,7 @@ void process_ACK(packet *pkt, bt_peer_t *peer) {
         return;
     if (pkt->header.ack_num < 0)
         return;
-    printf("Last Ack Number: %d, Ack Number: %d\n", sdr->last_acked, pkt->header.ack_num);
+//    printf("Last Ack Number: %d, Ack Number: %d\n", sdr->last_acked, pkt->header.ack_num);
     if (pkt->header.ack_num >= sdr->pkt_num) {//发送完成
         if (sdr->last_sent < sdr->pkt_num)
             return;
@@ -333,14 +335,19 @@ void process_ACK(packet *pkt, bt_peer_t *peer) {
     if (pkt->header.ack_num > sdr->last_acked) {
         //使用累计确认原则，当ack_num大于上次确认的ack_num，则更新发送窗口信息，process_sender捕捉到空闲窗口则发送新的数据包
         sdr->last_acked = pkt->header.ack_num;
-        sdr->last_available = sdr->last_acked + sdr->win_size;
+        sdr->last_available = (uint32_t) (sdr->last_acked + sdr->cwnd);
         sdr->dup_ack_num = 1;   //第一次收到（有效）
+        if (sdr->cwnd <= sdr->ssthresh)
+            sdr->cwnd++;    //慢启动指数增长
+        else {
+            sdr->cwnd += 1 / sdr->cwnd;
+        }
     } else if (pkt->header.ack_num == sdr->last_acked) {
         sdr->dup_ack_num++;
+        sdr->cwnd++;
         if (sdr->dup_ack_num >= DUP_ACK_NUM) {
             //接收到重复的ack_num，将last_sent指向最早未确认的包，process_sender根据新的last_sent重发所有未确认数据
-            sdr->last_sent = pkt->header.ack_num;
-            sdr->dup_ack_num = 1;
+            redo(sdr, pkt->header.ack_num);
         }
     }
     stop_timer(sdr);
@@ -349,4 +356,29 @@ void process_ACK(packet *pkt, bt_peer_t *peer) {
 void process_DENIED(packet *pkt, bt_peer_t *peer) {
     //rejected
     //do nothing
+}
+
+void *trace_cwnd(sender *sdr) {
+    FILE *fp;
+    char file_name[64] = {0};
+    sprintf(file_name, "peer_%d_tracer", sdr->p_receiver->id);
+    remove(file_name);
+    if ((fp = fopen(file_name, "w+")) == NULL) {
+        printf("创建文件%s失败\n", file_name);
+        exit(0);
+    }
+    struct timeval timeout;
+    fprintf(fp, "Control window: %d\n", (int) (sdr->cwnd));
+    while (1) {
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 20000;
+        if (select(0, NULL, NULL, NULL, &timeout) >= 0) {
+            fprintf(fp, "Control window: %d\n", (int) (sdr->cwnd));
+        }
+        if (sdr->last_sent >= sdr->pkt_num)
+            break;
+    }
+    fflush(fp);
+    fclose(fp);
+    return NULL;
 }

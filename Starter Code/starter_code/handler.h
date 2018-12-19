@@ -44,4 +44,7 @@ void process_ACK(packet *pkt, bt_peer_t *peer);
 
 void process_DENIED(packet *pkt, bt_peer_t *peer);
 
+void *trace_cwnd(sender *sdr);
+
 #endif //A_BITTORRENT_LIKE_FILE_TRANSFER_APPLICATION_HANDLER_H
+
