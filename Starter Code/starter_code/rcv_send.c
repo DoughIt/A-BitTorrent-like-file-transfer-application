@@ -10,7 +10,7 @@
 #include <math.h>
 #include <pthread.h>
 
-double timeout_interval = 2000, dev_rtt = 0, estimated_rtt = 0, sample_rtt = 0;
+double timeout_interval = 1000, dev_rtt = 0, estimated_rtt = 0, sample_rtt = 0;
 
 void init_sender_pool(sender_pool_t *sender_pool, int max) {
     sender_pool->max_num = max;
@@ -135,7 +135,7 @@ int is_running(my_timer_t *timer) {
 void init_timer(my_timer_t *timer, uint32_t id) {
     timer->running = 0;
     timer->id = id;
-    timer->timeout.tv_sec = (__time_t) (timeout_interval / 1000);
+    timer->timeout.tv_sec = (__time_t)(timeout_interval / 1000);
     timer->timeout.tv_usec = 0;
 }
 
@@ -143,7 +143,6 @@ void *t_start(sender *sdr) {
     uint32_t id = sdr->timer->id;
     if (is_running(sdr->timer) && select(0, NULL, NULL, NULL, &sdr->timer->timeout) == 0) {
         if (sdr->timer->id == id) {//判断当前计时段内计时器是否被重启过，如重启过则该次计时失效
-            puts("Timeout");
             redo(sdr, id);
         }
     }

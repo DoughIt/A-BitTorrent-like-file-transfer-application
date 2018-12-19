@@ -146,7 +146,11 @@ void *process_sender(sender *sdr) {
         timer.tv_sec = 0;
         timer.tv_usec = 1;
         if (select(0, NULL, NULL, NULL, &timer) >= 0) {
-            if (sdr->last_sent < sdr->last_available && sdr->last_acked < sdr->pkt_num) {//不断检测是否有空闲窗口，若有则发送数据包
+            if (sdr->last_sent < sdr->last_available && sdr->last_sent < sdr->pkt_num) {//不断检测是否有空闲窗口，若有则发送数据包
+                if (sdr->last_sent == sdr->last_acked) { //
+                    init_timer(sdr->timer, sdr->last_acked);
+                    start_timer(sdr);
+                }
                 send_PKT(sock, sdr->p_receiver, sdr->pkts[sdr->last_sent++]);
             }
         }
@@ -319,6 +323,8 @@ void process_ACK(packet *pkt, bt_peer_t *peer) {
         return;
     printf("Last Ack Number: %d, Ack Number: %d\n", sdr->last_acked, pkt->header.ack_num);
     if (pkt->header.ack_num >= sdr->pkt_num) {//发送完成
+        if (sdr->last_sent < sdr->pkt_num)
+            return;
         puts("Finished");
         stop_timer(sdr);
         remove_sender(sender_pool, sdr);
@@ -337,10 +343,7 @@ void process_ACK(packet *pkt, bt_peer_t *peer) {
             sdr->dup_ack_num = 1;
         }
     }
-    //重新启动计时器
     stop_timer(sdr);
-    init_timer(sdr->timer, sdr->last_acked);
-    start_timer(sdr);
 }
 
 void process_DENIED(packet *pkt, bt_peer_t *peer) {
