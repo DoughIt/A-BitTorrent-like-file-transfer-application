@@ -46,7 +46,7 @@ it receives a WHOHAS packet for chunks the peer has.
 it does not have any of the chunks listed in a WHOHAS packet.  
 
 You will see either "##### Test X Passed! #####" or 
-"###### Test X Failed ########, along with output that will
+"###### Test X Failed ########, along with chunks2file that will
 provide information about why any tests failed.  
 Remember that these tests are CUMULATIVE.  That means, you can't
 get points for passing test X unless you passed all tests numbered

@@ -12,7 +12,7 @@
 #include "tracker.h"
 
 #define GET_NUM 6           /** The maximum number of GET requests that a peer can tackle **/
-#define SSTHRESH 8          /** Default ssthresh value **/
+#define SSTHRESH 20          /** Default ssthresh value **/
 #define CWND 1              /** Default cwnd value **/
 #define DUP_ACK_NUM 3       /** To avoid confusion from re-ordering, a sender counts a packet lost only after 3 duplicate ACKs in a row **/
 
@@ -33,7 +33,7 @@ typedef struct my_timer_s {
 
 typedef struct sender_s {
     uint32_t ssthresh;
-    float cwnd;        /**< last_sent - last_acked <= cwnd **/
+    float cwnd;        /** last_sent - last_acked <= cwnd **/
     uint32_t last_sent;
     uint32_t last_acked;
     uint32_t last_available;
@@ -79,7 +79,7 @@ void remove_sender(sender_pool_t *sender_pool, sender *sdr);
 
 void remove_receiver(receiver_pool_t *receiver_pool, receiver *rcvr);
 
-void redo(sender *sdr, uint32_t last_acked);
+void retransmit(sender *sdr, uint32_t last_acked);
 
 int is_running(my_timer_t *);
 
@@ -88,7 +88,5 @@ void init_timer(my_timer_t *, uint32_t);
 void start_timer(sender *);
 
 void stop_timer(sender *);
-
-void update(float);
 
 #endif //BITTORRECT_LIKE_RCV_SEND_H

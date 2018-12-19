@@ -20,106 +20,6 @@ queue *done_chunks;//下载完成的chunk
 sender_pool_t *sender_pool;
 receiver_pool_t *receiver_pool;
 
-int correct(packet *pkt) {
-    pkt_header *header = &pkt->header;
-    if (header->magic_num != MAGIC || header->version_num != VERSION || header->packet_type > DENIED ||
-        header->packet_type < WHOHAS)
-        return 0;
-    pkt_type type = pkt_parse(pkt);
-    if ((type == DATA && (header->seq_num <= 0 || header->ack_num > 0))
-        || (type == ACK && (header->seq_num > 0 || header->ack_num < 0))
-        || (type != DATA && type != ACK && (header->seq_num > 0 || header->ack_num > 0)))
-        return 0;
-    return 1;
-}
-
-int not_correct(packet *pkt) {
-    return !correct(pkt);
-}
-
-bt_peer_t *get_peer(struct sockaddr_in *addr) {
-    bt_peer_t *p;
-    for (p = config.peers; p != NULL; p = p->next) {
-        if (p->addr.sin_port == addr->sin_port) {
-            return p;
-        }
-    }
-    return NULL;
-}
-
-void *pthread_receiver(void *arg) {
-    struct timeval timeout;
-    puts("Downloading");
-    while (!is_empty(down_chunks)) {    //每隔1秒检查一次下载任务是否完成，未完成则调用look_at()下载
-        timeout.tv_sec = 1;
-        timeout.tv_usec = 0;
-        if (select(0, NULL, NULL, NULL, &timeout) >= 0) {
-            look_at();
-        }
-    }
-    output(); //将接收完成的数据输出到outputfile
-    puts("Finished");
-    return NULL;
-}
-
-void output() {
-    if (!is_empty(down_chunks) || is_empty(done_chunks)) {
-        return;
-    }
-    chunk_t *data_chunk;
-    FILE *fp;
-    if ((fp = fopen(config.output_file, "w+")) == NULL) {
-        printf("Fail to create %s\n", config.output_file);
-        exit(0);
-    }
-    while (done_chunks->n) {
-        data_chunk = (chunk_t *) dequeue(done_chunks);
-//        if (check_chunk(data_chunk, data_chunk->sha1)) {//检查数据是否正确
-        fseek(fp, data_chunk->id * BT_CHUNK_SIZE, SEEK_SET);
-        fwrite(data_chunk->data, BT_CHUNK_SIZE, 1, fp);
-//        } else break;
-        free_chunk(data_chunk);
-    }
-    fclose(fp);
-    free_queue(down_chunks);
-    free_queue(done_chunks);
-}
-
-void look_at() {
-    scan_chunk_done(down_chunks, done_chunks);//将下载完成的chunk从down_chunks移除，添加到done_chunks队列
-    if (receiver_pool->cur_num >= receiver_pool->max_num) {
-        return; //等待
-    }
-    if (!is_empty(down_chunks)) {
-        chunk_t *down_chunk = choose_chunk_to_download(down_chunks);//选择可下载块
-        assert(down_chunk != NULL);
-        //选择一个peer源下载
-        bt_peer_t *peer = NULL;
-        node *h_node = down_chunk->holders->head;
-        while (h_node) {
-            peer = (bt_peer_t *) h_node->data;
-            if (get_receiver(receiver_pool, peer) == NULL) {//选择一个没建立连接的peer
-                break;
-            }
-            h_node = h_node->next;
-        }
-        if (get_receiver(receiver_pool, peer) != NULL)  //该链接正在使用
-            return;
-        if (peer == NULL) {//可能没接收到拥有这个chunk的peer的IHAVE数据包
-            return;
-        }
-        add_receiver(receiver_pool, peer, down_chunk);//建立连接，指定需要下载的chunk以及发送方
-        update_state(down_chunks, down_chunk, DOWNLOADING);  //更新chunk状态为【下载中】
-        uint8_t *bin_sha1 = (uint8_t *) malloc(SHA1_HASH_SIZE);
-        ascii2hex(down_chunk->sha1, sizeof(down_chunk->sha1), bin_sha1);
-        packet *pkt_get = make_GET(bin_sha1);
-        send_PKT(sock, peer, pkt_get);
-//        setjmp(*r->timer->buf);//保存当前堆栈信息，方便重传
-//        start_timer(r->timer);   //启动定时器
-        free(pkt_get);
-    }
-}
-
 void send_PKT(int sock, bt_peer_t *peer, packet *pkt) {
     if (peer != NULL) {
         convert(pkt, NET);
@@ -127,38 +27,6 @@ void send_PKT(int sock, bt_peer_t *peer, packet *pkt) {
                       sizeof(peer->addr));
         convert(pkt, HOST);
     }
-}
-
-void send_PKTS(int sock, bt_peer_t *peer, queue *pkts) {
-    node *cur_node = pkts->head;
-    while (cur_node) {
-        send_PKT(sock, peer, (packet *) cur_node->data);
-        cur_node = cur_node->next;
-    }
-}
-
-void *process_sender(sender *sdr) {
-    puts("Uploading");
-    init_timer(sdr->timer, sdr->last_acked);
-    start_timer(sdr);
-    struct timeval timer;
-    while (1) {
-        timer.tv_sec = 0;
-        timer.tv_usec = 1;
-        if (select(0, NULL, NULL, NULL, &timer) >= 0) {
-            if (sdr->last_sent < sdr->last_available && sdr->last_sent < sdr->pkt_num) {//不断检测是否有空闲窗口，若有则发送数据包
-                if (sdr->last_sent == sdr->last_acked) { //对发送窗口的第一个数据包设置计时器
-                    init_timer(sdr->timer, sdr->last_acked);
-                    start_timer(sdr);
-                }
-                send_PKT(sock, sdr->p_receiver, sdr->pkts[sdr->last_sent++]);
-            }
-        }
-        if (sdr->last_acked >= sdr->pkt_num) {//发送完毕
-            break;
-        }
-    }
-    return NULL;
 }
 
 void process_download() {
@@ -181,6 +49,7 @@ void process_download() {
             peers = peers->next;
         }
     }
+    //新建一个线程下载所有chunks
     pthread_t t_receiver;
     if (pthread_create(&t_receiver, NULL, pthread_receiver, NULL) == -1) {//创建线程下载chunks
         puts("Fail to download");
@@ -282,11 +151,12 @@ void process_GET(packet *pkt, bt_peer_t *peer) {
         packet **pkts = chunk2pkts(chunk, &num);
         sdr = add_sender(sender_pool, peer, pkts, num);//建立连接，调用process_sender处理数据包
 
+        //新建一个线程记录该发送窗口的窗口变化
         pthread_t p_tracer;
-        if (pthread_create(&p_tracer, NULL, (void *(*)(void *)) trace_cwnd, sdr) == -1) {
+        if (pthread_create(&p_tracer, NULL, (void *(*)(void *)) cwnd2log, sdr) == -1) {
             exit(-1);
         }
-
+        //新建一个线程发送该chunk对应的DATA数据包
         pthread_t t_sender;
         if (pthread_create(&t_sender, NULL, (void *(*)(void *)) process_sender, sdr) == -1) {
             puts("Fail to upload！");
@@ -315,6 +185,7 @@ void process_DATA(packet *pkt, bt_peer_t *peer) {
         update_state(down_chunks, rcvr->chunk, FINISHED);   //更新下载状态为【完成】
         remove_receiver(receiver_pool, rcvr);
     }
+    free(pkt_ack);
 }
 
 void process_ACK(packet *pkt, bt_peer_t *peer) {
@@ -347,7 +218,7 @@ void process_ACK(packet *pkt, bt_peer_t *peer) {
         sdr->cwnd++;
         if (sdr->dup_ack_num >= DUP_ACK_NUM) {
             //接收到重复的ack_num，将last_sent指向最早未确认的包，process_sender根据新的last_sent重发所有未确认数据
-            redo(sdr, pkt->header.ack_num);
+            retransmit(sdr, pkt->header.ack_num);
         }
     }
     stop_timer(sdr);
@@ -358,27 +229,153 @@ void process_DENIED(packet *pkt, bt_peer_t *peer) {
     //do nothing
 }
 
-void *trace_cwnd(sender *sdr) {
+void *process_sender(sender *sdr) {
+    puts("Uploading");
+    init_timer(sdr->timer, sdr->last_acked);
+    start_timer(sdr);
+    struct timeval timer;
+    while (1) {
+        timer.tv_sec = 0;
+        timer.tv_usec = 100;
+        if (select(0, NULL, NULL, NULL, &timer) >= 0) {
+            if (sdr->last_sent < sdr->last_available && sdr->last_sent < sdr->pkt_num) {//不断（每隔0.1毫秒）检测是否有空闲窗口，若有则发送数据包
+                if (sdr->last_sent == sdr->last_acked) { //对发送窗口的第一个数据包设置计时器
+                    init_timer(sdr->timer, sdr->last_acked);
+                    start_timer(sdr);
+                }
+                send_PKT(sock, sdr->p_receiver, sdr->pkts[sdr->last_sent++]);
+            }
+        }
+        if (sdr->last_acked >= sdr->pkt_num) {//发送完毕
+            break;
+        }
+    }
+    return NULL;
+}
+
+void *pthread_receiver(void *arg) {
+    struct timeval timeout;
+    puts("Downloading");
+    while (!is_empty(down_chunks)) {    //每隔1秒检查一次下载任务是否完成，未完成则调用look_at()下载
+        timeout.tv_sec = 1;
+        timeout.tv_usec = 0;
+        if (select(0, NULL, NULL, NULL, &timeout) >= 0) {
+            look_at();
+        }
+    }
+    chunks2file(); //将接收完成的数据输出到outputfile
+    puts("Finished");
+    return NULL;
+}
+
+void chunks2file() {
+    if (!is_empty(down_chunks) || is_empty(done_chunks)) {
+        return;
+    }
+    chunk_t *data_chunk;
+    FILE *fp;
+    if ((fp = fopen(config.output_file, "w+")) == NULL) {
+        printf("Fail to create %s\n", config.output_file);
+        exit(0);
+    }
+    while (done_chunks->n) {
+        data_chunk = (chunk_t *) dequeue(done_chunks);
+//        if (check_chunk(data_chunk, data_chunk->sha1)) {//检查数据是否正确
+        fseek(fp, data_chunk->id * BT_CHUNK_SIZE, SEEK_SET);
+        fwrite(data_chunk->data, BT_CHUNK_SIZE, 1, fp);
+//        } else break;
+        free_chunk(data_chunk);
+    }
+    fclose(fp);
+    free(receiver_pool);
+    free_queue(down_chunks);
+    free_queue(done_chunks);
+}
+
+void look_at() {
+    scan_chunk_done(down_chunks, done_chunks);//将下载完成的chunk从down_chunks移除，添加到done_chunks队列
+    if (receiver_pool->cur_num >= receiver_pool->max_num) {
+        return; //等待
+    }
+    if (!is_empty(down_chunks)) {
+        chunk_t *down_chunk = choose_chunk_to_download(down_chunks);//选择可下载块
+        assert(down_chunk != NULL);
+        //选择一个peer源下载
+        bt_peer_t *peer = NULL;
+        node *h_node = down_chunk->holders->head;
+        while (h_node) {
+            peer = (bt_peer_t *) h_node->data;
+            if (get_receiver(receiver_pool, peer) == NULL) {//选择一个没建立连接的peer
+                break;
+            }
+            h_node = h_node->next;
+        }
+        if (get_receiver(receiver_pool, peer) != NULL)  //该链接正在使用
+            return;
+        if (peer == NULL) {//可能没接收到拥有这个chunk的peer的IHAVE数据包
+            return;
+        }
+        add_receiver(receiver_pool, peer, down_chunk);//建立连接，指定需要下载的chunk以及发送方
+        update_state(down_chunks, down_chunk, DOWNLOADING);  //更新chunk状态为【下载中】
+        uint8_t *bin_sha1 = (uint8_t *) malloc(SHA1_HASH_SIZE);
+        ascii2hex(down_chunk->sha1, sizeof(down_chunk->sha1), bin_sha1);
+        packet *pkt_get = make_GET(bin_sha1);
+        send_PKT(sock, peer, pkt_get);
+        free(bin_sha1);
+        free(pkt_get);
+    }
+}
+
+void *cwnd2log(sender *sdr) {
     FILE *fp;
     char file_name[64] = {0};
-    sprintf(file_name, "peer_%d_tracer", sdr->p_receiver->id);
+    sprintf(file_name, "peer_%d_cwnd_log", sdr->p_receiver->id);  //每个发送方的拥塞窗口数据保存到peer_#id#_cwnd_log
     remove(file_name);
     if ((fp = fopen(file_name, "w+")) == NULL) {
-        printf("创建文件%s失败\n", file_name);
+        printf("Fail to create %s\n", file_name);
         exit(0);
     }
     struct timeval timeout;
-    fprintf(fp, "Control window: %d\n", (int) (sdr->cwnd));
+    int ms = 0;
+    fprintf(fp, "Control window size = %d at time = %dms\n", (int) (sdr->cwnd), ms);
     while (1) {
         timeout.tv_sec = 0;
-        timeout.tv_usec = 20000;
+        timeout.tv_usec = 5000;    //每隔0.005秒输出拥塞窗口信息
         if (select(0, NULL, NULL, NULL, &timeout) >= 0) {
-            fprintf(fp, "Control window: %d\n", (int) (sdr->cwnd));
+            ms += 5;
+            fprintf(fp, "Control window size = %d at time = %dms\n", (int) (sdr->cwnd), ms);
         }
         if (sdr->last_sent >= sdr->pkt_num)
             break;
     }
     fflush(fp);
     fclose(fp);
+    return NULL;
+}
+
+int correct(packet *pkt) {
+    pkt_header *header = &pkt->header;
+    if (header->magic_num != MAGIC || header->version_num != VERSION || header->packet_type > DENIED ||
+        header->packet_type < WHOHAS)
+        return 0;
+    pkt_type type = pkt_parse(pkt);
+    if ((type == DATA && (header->seq_num <= 0 || header->ack_num > 0))
+        || (type == ACK && (header->seq_num > 0 || header->ack_num < 0))
+        || (type != DATA && type != ACK && (header->seq_num > 0 || header->ack_num > 0)))
+        return 0;
+    return 1;
+}
+
+int not_correct(packet *pkt) {
+    return !correct(pkt);
+}
+
+bt_peer_t *get_peer(struct sockaddr_in *addr) {
+    bt_peer_t *p;
+    for (p = config.peers; p != NULL; p = p->next) {
+        if (p->addr.sin_port == addr->sin_port) {
+            return p;
+        }
+    }
     return NULL;
 }

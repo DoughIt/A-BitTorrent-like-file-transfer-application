@@ -10,7 +10,7 @@
 #include <math.h>
 #include <pthread.h>
 
-double timeout_interval = 1000, dev_rtt = 0, estimated_rtt = 0, sample_rtt = 0;
+double timeout_interval = 1000;
 
 void init_sender_pool(sender_pool_t *sender_pool, int max) {
     sender_pool->max_num = max;
@@ -118,7 +118,7 @@ void remove_receiver(receiver_pool_t *receiver_pool, receiver *rcvr) {
     }
 }
 
-void redo(sender *sdr, uint32_t last_acked) {
+void retransmit(sender *sdr, uint32_t last_acked) {
     sdr->last_sent = last_acked;
     sdr->last_acked = last_acked;
     sdr->ssthresh = (uint32_t) (sdr->cwnd / 2);
@@ -143,7 +143,7 @@ void *t_start(sender *sdr) {
     uint32_t id = sdr->timer->id;
     if (is_running(sdr->timer) && select(0, NULL, NULL, NULL, &sdr->timer->timeout) == 0) {
         if (sdr->timer->id == id) {//判断当前计时段内计时器是否被重启过，如重启过则该次计时失效
-            redo(sdr, id);
+            retransmit(sdr, id);
         }
     }
     return NULL;
@@ -161,10 +161,4 @@ void stop_timer(sender *sdr) {
     if (sdr == NULL)
         return;
     sdr->timer->running = 0;
-}
-
-void update(float sample_rtt) {
-    estimated_rtt = (1 - ALPHA) * estimated_rtt + ALPHA * sample_rtt;
-    dev_rtt = (1 - BETA) * dev_rtt + BETA * fabs(sample_rtt - estimated_rtt);
-    timeout_interval = estimated_rtt + 4 * dev_rtt;
 }

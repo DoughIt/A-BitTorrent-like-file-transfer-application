@@ -26,7 +26,7 @@ The command given to your peer is 'GET test1.chunks test1.tar'.
 peer.  The ref_peer is given the command: 'GET test2.chunks test2.tar'
 
 You will see either "##### Test X Passed! #####" or 
-"###### Test X Failed ########, along with output that will
+"###### Test X Failed ########, along with chunks2file that will
 provide information about why any tests failed.  
 
 Debugging Levels:  
