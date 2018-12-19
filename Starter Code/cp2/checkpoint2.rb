@@ -15,7 +15,7 @@ def test1
 	    $stdin.reopen(parent_to_child_read) or
 			raise "Unable to redirect STDIN"
 
-	    exec("./peer -p nodes.map -c B.chunks -f C.chunks -m 4 -i 2 -d 0")    
+	    exec("./peer -p nodes.map -c B.chunks -f C.chunks -m 4 -i 2 -d 0")
 	end
 	parent_to_child_read.close
 

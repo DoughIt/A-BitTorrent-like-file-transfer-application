@@ -88,7 +88,7 @@ queue *which_i_have(queue *who_has_chunks, char *has_chunk_file);
  * @param data_chunk
  * @return
  */
-packet **chunk2pkts(chunk_t *data_chunk);
+packet **chunk2pkts(chunk_t *data_chunk, int *total);
 
 chunk_t *get_data_chunk(char *chunkfile, packet *pkt);
 

@@ -181,19 +181,20 @@ queue *which_i_have(queue *who_has_chunks, char *has_chunk_file) {
     return i_have_chunks;
 }
 
-packet **chunk2pkts(chunk_t *data_chunk) {
+packet **chunk2pkts(chunk_t *data_chunk, int *total) {
     char *data = data_chunk->data;
-    int num = BT_CHUNK_SIZE / DATA_SIZE + (BT_CHUNK_SIZE % DATA_SIZE > 0);//一个数据块被分成num个DATA数据包
+    *total = BT_CHUNK_SIZE / DATA_SIZE + (BT_CHUNK_SIZE % DATA_SIZE > 0);//一个数据块被分成num个DATA数据包
     packet *pkt;
-    packet **pkts = malloc(num * sizeof(packet *));
+    packet **pkts = malloc(*total * sizeof(packet *));
     int i;
-    for (i = 1; i < num; ++i) {
+    for (i = 0; i < *total - 1; ++i) {
         uint8_t pkt_data[DATA_SIZE];
-        memcpy(pkt_data, data + (i - 1) * DATA_SIZE, DATA_SIZE);
-        pkt = make_DATA((uint32_t) i, DATA_SIZE, pkt_data);
+        memcpy(pkt_data, data + i * DATA_SIZE, DATA_SIZE);
+        pkt = make_DATA((uint32_t) (i + 1), DATA_SIZE, pkt_data);
         pkts[i] = pkt;
     }
-    pkt = make_DATA((uint32_t) i, (uint32_t) (BT_CHUNK_SIZE % DATA_SIZE), (uint8_t *) (data + (i - 1) * DATA_SIZE));
+    pkt = make_DATA((uint32_t) (i + 1), (uint32_t) (BT_CHUNK_SIZE % DATA_SIZE),
+                    (uint8_t *) (data + i * DATA_SIZE));
     pkts[i] = pkt;
     return pkts;
 }

@@ -66,7 +66,7 @@ void init_sender_pool(sender_pool_t *sender_pool, int max);
 
 void init_receiver_pool(receiver_pool_t *receiver_pool, int max);
 
-sender *add_sender(sender_pool_t *sender_pool, bt_peer_t *p_rcvr, packet **pkts);
+sender *add_sender(sender_pool_t *sender_pool, bt_peer_t *p_rcvr, packet **pkts, int num);
 
 receiver *add_receiver(receiver_pool_t *receiver_pool, bt_peer_t *p_sdr, chunk_t *chunk);
 

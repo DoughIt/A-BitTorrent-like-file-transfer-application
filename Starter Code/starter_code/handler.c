@@ -146,7 +146,7 @@ void *process_sender(sender *sdr) {
         timer.tv_sec = 0;
         timer.tv_usec = 1;
         if (select(0, NULL, NULL, NULL, &timer) >= 0) {
-            if (sdr->last_sent < sdr->last_available && sdr->last_sent < sdr->pkt_num) {//不断检测是否有空闲窗口，若有则发送数据包
+            if (sdr->last_sent < sdr->last_available && sdr->last_acked < sdr->pkt_num) {//不断检测是否有空闲窗口，若有则发送数据包
                 send_PKT(sock, sdr->p_receiver, sdr->pkts[sdr->last_sent++]);
             }
         }
@@ -276,8 +276,9 @@ void process_GET(packet *pkt, bt_peer_t *peer) {
         free(pkt_denied);
     } else {
         chunk_t *chunk = get_data_chunk(config.chunk_file, pkt);
-        packet **pkts = chunk2pkts(chunk);
-        sdr = add_sender(sender_pool, peer, pkts);//建立连接，调用process_sender处理数据包
+        int num = 0;
+        packet **pkts = chunk2pkts(chunk, &num);
+        sdr = add_sender(sender_pool, peer, pkts, num);//建立连接，调用process_sender处理数据包
 //        process_sender(sdr);
         pthread_t t_sender;
         if (pthread_create(&t_sender, NULL, (void *(*)(void *)) process_sender, sdr) == -1) {
@@ -314,11 +315,13 @@ void process_ACK(packet *pkt, bt_peer_t *peer) {
     sender *sdr = get_sender(sender_pool, peer);
     if (sdr == NULL)
         return;
+    if (pkt->header.ack_num < 0)
+        return;
     printf("Last Ack Number: %d, Ack Number: %d\n", sdr->last_acked, pkt->header.ack_num);
-    if (pkt->header.ack_num + 1 > sdr->pkt_num) {//发送完成
+    if (pkt->header.ack_num >= sdr->pkt_num) {//发送完成
         puts("Finished");
-        remove_sender(sender_pool, sdr);
         stop_timer(sdr);
+        remove_sender(sender_pool, sdr);
         return;
     }
     if (pkt->header.ack_num > sdr->last_acked) {
@@ -332,7 +335,6 @@ void process_ACK(packet *pkt, bt_peer_t *peer) {
             //接收到重复的ack_num，将last_sent指向最早未确认的包，process_sender根据新的last_sent重发所有未确认数据
             sdr->last_sent = pkt->header.ack_num;
             sdr->dup_ack_num = 1;
-            puts("Duplicate ACK");
         }
     }
     //重新启动计时器

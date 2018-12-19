@@ -26,7 +26,7 @@ void init_receiver_pool(receiver_pool_t *receiver_pool, int max) {
     init_queue(receiver_pool->workers);
 }
 
-sender *add_sender(sender_pool_t *sender_pool, bt_peer_t *p_rcvr, packet **pkts) {
+sender *add_sender(sender_pool_t *sender_pool, bt_peer_t *p_rcvr, packet **pkts, int num) {
     if (sender_pool->cur_num >= sender_pool->max_num)
         return NULL;
     sender *sdr = malloc(sizeof(sender));
@@ -37,8 +37,7 @@ sender *add_sender(sender_pool_t *sender_pool, bt_peer_t *p_rcvr, packet **pkts)
     sdr->last_available = WINDOW_SIZE;
     sdr->dup_ack_num = 0;
     sdr->pkts = pkts;
-    sdr->pkt_num = (uint32_t) (BT_CHUNK_SIZE / DATA_SIZE + (BT_CHUNK_SIZE % DATA_SIZE >
-                                                            0)) /*sizeof(pkts) / (DATA_SIZE + HDR_SIZE) + (sizeof(pkts) % (DATA_SIZE + HDR_SIZE) != 0)*/;
+    sdr->pkt_num = (uint32_t) num;
     sdr->timer = (my_timer_t *) malloc(sizeof(my_timer_t));
     init_timer(sdr->timer, sdr->last_acked);
     enqueue(sender_pool->workers, sdr);
@@ -124,7 +123,7 @@ void remove_receiver(receiver_pool_t *receiver_pool, receiver *rcvr) {
 void redo(sender *sdr, uint32_t last_acked) {
     sdr->last_sent = last_acked;
     sdr->last_acked = last_acked;
-    sdr->dup_ack_num = 0;
+    sdr->dup_ack_num = 1;
     sdr->last_available = sdr->last_sent + sdr->win_size;
 }
 
@@ -143,7 +142,7 @@ void init_timer(my_timer_t *timer, uint32_t id) {
 void *t_start(sender *sdr) {
     uint32_t id = sdr->timer->id;
     if (is_running(sdr->timer) && select(0, NULL, NULL, NULL, &sdr->timer->timeout) == 0) {
-        if (sdr->timer->id == id && sdr->dup_ack_num <= 1) {//判断当前计时段内计时器是否被重启过，如重启过则该次计时失效
+        if (sdr->timer->id == id) {//判断当前计时段内计时器是否被重启过，如重启过则该次计时失效
             puts("Timeout");
             redo(sdr, id);
         }
