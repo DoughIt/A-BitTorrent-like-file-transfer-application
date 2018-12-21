@@ -12,7 +12,7 @@
 #include "tracker.h"
 
 #define GET_NUM 6           /** The maximum number of GET requests that a peer can tackle **/
-#define SSTHRESH 20          /** Default ssthresh value **/
+#define SSTHRESH 64          /** Default ssthresh value **/
 #define CWND 1              /** Default cwnd value **/
 #define DUP_ACK_NUM 3       /** To avoid confusion from re-ordering, a sender counts a packet lost only after 3 duplicate ACKs in a row **/
 
@@ -79,6 +79,10 @@ void remove_sender(sender_pool_t *sender_pool, sender *sdr);
 
 void remove_receiver(receiver_pool_t *receiver_pool, receiver *rcvr);
 
+/**
+ * If a packet is lost in slow start, the sender sets ssthresh to max,
+ * in case the client returns to slow start again during the same connection.
+ */
 void retransmit(sender *sdr, uint32_t last_acked);
 
 int is_running(my_timer_t *);

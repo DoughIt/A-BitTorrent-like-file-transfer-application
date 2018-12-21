@@ -56,7 +56,7 @@ void look_at();
 
 bt_peer_t *get_peer(struct sockaddr_in *addr);
 
-void *cwnd2log(sender *sdr);
+void cwnd2log(int id, int cwnd);
 
 int correct(packet *pkt);
 

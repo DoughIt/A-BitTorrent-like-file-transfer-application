@@ -121,9 +121,14 @@ void remove_receiver(receiver_pool_t *receiver_pool, receiver *rcvr) {
 void retransmit(sender *sdr, uint32_t last_acked) {
     sdr->last_sent = last_acked;
     sdr->last_acked = last_acked;
-    sdr->ssthresh = (uint32_t) (sdr->cwnd / 2);
-    sdr->cwnd = sdr->ssthresh + DUP_ACK_NUM;
     sdr->dup_ack_num = 1;
+    if (sdr->cwnd <= sdr->ssthresh) { // 重新进入慢启动阶段
+        sdr->ssthresh = (uint32_t) sdr->cwnd;
+        sdr->cwnd = 1;
+    } else {
+        sdr->ssthresh = (uint32_t) (sdr->cwnd / 2);
+        sdr->cwnd = sdr->ssthresh + DUP_ACK_NUM;
+    }
     sdr->last_available = (uint32_t) (sdr->last_sent + sdr->cwnd);
 }
 

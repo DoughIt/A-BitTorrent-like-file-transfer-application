@@ -7,6 +7,7 @@
 #include "handler.h"
 #include "spiffy.h"
 #include "packet.h"
+#include <sys/time.h>
 #include <stdlib.h>
 #include <assert.h>
 #include <memory.h>
@@ -19,6 +20,11 @@ queue *done_chunks;//下载完成的chunk
 
 sender_pool_t *sender_pool;
 receiver_pool_t *receiver_pool;
+
+FILE *log_file;
+struct timeval starter;
+struct timeval now;
+#define LOG(id, ms, cwnd) fprintf(log_file, "peer%d\ttime = %d\tcwnd = %d\n", id, ms, cwnd)
 
 void send_PKT(int sock, bt_peer_t *peer, packet *pkt) {
     if (peer != NULL) {
@@ -149,13 +155,8 @@ void process_GET(packet *pkt, bt_peer_t *peer) {
         chunk_t *chunk = get_data_chunk(config.chunk_file, pkt);
         int num = 0;
         packet **pkts = chunk2pkts(chunk, &num);
-        sdr = add_sender(sender_pool, peer, pkts, num);//建立连接，调用process_sender处理数据包
-
-        //新建一个线程记录该发送窗口的窗口变化
-        pthread_t p_tracer;
-        if (pthread_create(&p_tracer, NULL, (void *(*)(void *)) cwnd2log, sdr) == -1) {
-            exit(-1);
-        }
+        sdr = add_sender(sender_pool, peer, pkts, num);
+        //建立连接，调用process_sender处理数据包
         //新建一个线程发送该chunk对应的DATA数据包
         pthread_t t_sender;
         if (pthread_create(&t_sender, NULL, (void *(*)(void *)) process_sender, sdr) == -1) {
@@ -208,19 +209,24 @@ void process_ACK(packet *pkt, bt_peer_t *peer) {
         sdr->last_acked = pkt->header.ack_num;
         sdr->last_available = (uint32_t) (sdr->last_acked + sdr->cwnd);
         sdr->dup_ack_num = 1;   //第一次收到（有效）
-        if (sdr->cwnd <= sdr->ssthresh)
+        if (sdr->cwnd <= sdr->ssthresh) {
             sdr->cwnd++;    //慢启动指数增长
-        else {
-            sdr->cwnd += 1 / sdr->cwnd;
+            cwnd2log(sdr->p_receiver->id, (int) sdr->cwnd);
+        } else {
+            if ((int) sdr->cwnd + 1 < sdr->cwnd + 1 / sdr->cwnd) {
+                sdr->cwnd += 1 / sdr->cwnd;
+                cwnd2log(sdr->p_receiver->id, (int) sdr->cwnd);
+            } else sdr->cwnd += 1 / sdr->cwnd;
         }
     } else if (pkt->header.ack_num == sdr->last_acked) {
         sdr->dup_ack_num++;
-        sdr->cwnd++;
         if (sdr->dup_ack_num >= DUP_ACK_NUM) {
             //接收到重复的ack_num，将last_sent指向最早未确认的包，process_sender根据新的last_sent重发所有未确认数据
             retransmit(sdr, pkt->header.ack_num);
+            cwnd2log(sdr->p_receiver->id, (int) sdr->cwnd);
         }
     }
+
     stop_timer(sdr);
 }
 
@@ -231,6 +237,10 @@ void process_DENIED(packet *pkt, bt_peer_t *peer) {
 
 void *process_sender(sender *sdr) {
     puts("Uploading");
+    if (log_file == NULL) {
+        log_file = fopen("problem2-peer.txt", "a+");
+        gettimeofday(&starter, NULL);
+    }
     init_timer(sdr->timer, sdr->last_acked);
     start_timer(sdr);
     struct timeval timer;
@@ -249,6 +259,10 @@ void *process_sender(sender *sdr) {
         if (sdr->last_acked >= sdr->pkt_num) {//发送完毕
             break;
         }
+    }
+    if (log_file != NULL) {
+        fflush(log_file);
+        fclose(log_file);
     }
     return NULL;
 }
@@ -326,31 +340,10 @@ void look_at() {
     }
 }
 
-void *cwnd2log(sender *sdr) {
-    FILE *fp;
-    char file_name[64] = {0};
-    sprintf(file_name, "peer_%d_cwnd_log", sdr->p_receiver->id);  //每个发送方的拥塞窗口数据保存到peer_#id#_cwnd_log
-    remove(file_name);
-    if ((fp = fopen(file_name, "w+")) == NULL) {
-        printf("Fail to create %s\n", file_name);
-        exit(0);
-    }
-    struct timeval timeout;
-    int ms = 0;
-    fprintf(fp, "Control window size = %d at time = %dms\n", (int) (sdr->cwnd), ms);
-    while (1) {
-        timeout.tv_sec = 0;
-        timeout.tv_usec = 5000;    //每隔0.005秒输出拥塞窗口信息
-        if (select(0, NULL, NULL, NULL, &timeout) >= 0) {
-            ms += 5;
-            fprintf(fp, "Control window size = %d at time = %dms\n", (int) (sdr->cwnd), ms);
-        }
-        if (sdr->last_sent >= sdr->pkt_num)
-            break;
-    }
-    fflush(fp);
-    fclose(fp);
-    return NULL;
+void cwnd2log(int id, int cwnd) {
+    gettimeofday(&now, NULL);
+    int ms = (int) ((now.tv_sec - starter.tv_sec) * 1000 + (now.tv_usec - starter.tv_usec) / 1000);
+    LOG(id, ms, cwnd);
 }
 
 int correct(packet *pkt) {
