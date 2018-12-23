@@ -183,9 +183,14 @@ void process_DATA(packet *pkt, bt_peer_t *peer) {
     packet *pkt_ack = make_ACK(rcvr->last_rcvd);
     send_PKT(sock, peer, pkt_ack);
     if (rcvr->last_rcvd * DATA_SIZE >= BT_CHUNK_SIZE) {//下载完成
-        if (check_chunk(rcvr->chunk, rcvr->chunk->sha1))
-            update_state(down_chunks, rcvr->chunk, FINISHED);   //更新下载状态为【完成】
-        else update_state(down_chunks, rcvr->chunk, READY);     //数据不正确，重新获取
+        if (check_chunk(rcvr->chunk, rcvr->chunk->sha1)) {
+            //更新下载状态为【完成】
+            update_state(down_chunks, rcvr->chunk, FINISHED);
+        } else {
+            //数据不正确，将下载状态设为【准备下载】，重新获取
+            update_state(down_chunks, rcvr->chunk, READY);
+        }
+        //断开该连接
         remove_receiver(receiver_pool, rcvr);
     }
     free(pkt_ack);

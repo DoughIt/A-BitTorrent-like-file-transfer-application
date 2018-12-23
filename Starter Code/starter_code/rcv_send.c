@@ -125,7 +125,7 @@ void retransmit(sender *sdr, uint32_t last_acked) {
     if (sdr->cwnd <= sdr->ssthresh) { // 重新进入慢启动阶段
         sdr->ssthresh = (uint32_t) sdr->cwnd;
         sdr->cwnd = 1;
-    } else {
+    } else {    //TCP Reno策略，快速恢复
         sdr->ssthresh = (uint32_t) (sdr->cwnd / 2);
         sdr->cwnd = sdr->ssthresh + DUP_ACK_NUM;
     }
