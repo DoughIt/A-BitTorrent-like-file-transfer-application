@@ -239,5 +239,7 @@ chunk_t *get_data_chunk(char *chunkfile, packet *pkt) {
 int check_chunk(chunk_t *chunk, char *sha1) {
     uint8_t target[2 * SHA1_HASH_SIZE];
     shahash((uint8_t *) chunk->data, BT_CHUNK_SIZE, target);
-    return memcmp(target, sha1, 2 * SHA1_HASH_SIZE) == 0;
+    char target_hex[SHA1_HASH_SIZE] = {0};
+    binary2hex(target, SHA1_HASH_SIZE, target_hex);
+    return memcmp(target_hex, sha1, 2 * SHA1_HASH_SIZE) == 0;
 }

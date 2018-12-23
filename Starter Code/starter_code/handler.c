@@ -77,15 +77,15 @@ void process_PKT(packet *pkt, struct sockaddr_in *from) {
     pkt_type type = pkt_parse_type(pkt->header.packet_type);
     switch (type) {
         case WHOHAS:
-            puts("Received WHOHAS");
+//            puts("Received WHOHAS");
             process_WHOHAS(pkt, peer);
             break;
         case IHAVE:
-            puts("Received IHAVE");
+//            puts("Received IHAVE");
             process_IHAVE(pkt, peer);
             break;
         case GET:
-            puts("Received GET");
+//            puts("Received GET");
             process_GET(pkt, peer);
             break;
         case ACK:
@@ -93,15 +93,15 @@ void process_PKT(packet *pkt, struct sockaddr_in *from) {
             process_ACK(pkt, peer);
             break;
         case DATA:
-            puts("Received DATA");
+//            puts("Received DATA");
             process_DATA(pkt, peer);
             break;
         case DENIED:
-            puts("Received DENIED");
+//            puts("Received DENIED");
             process_DENIED(pkt, peer);
             break;
         default:
-            puts("Have no such type!");
+//            puts("Have no such type!");
             break;
     }
 }
@@ -183,7 +183,9 @@ void process_DATA(packet *pkt, bt_peer_t *peer) {
     packet *pkt_ack = make_ACK(rcvr->last_rcvd);
     send_PKT(sock, peer, pkt_ack);
     if (rcvr->last_rcvd * DATA_SIZE >= BT_CHUNK_SIZE) {//下载完成
-        update_state(down_chunks, rcvr->chunk, FINISHED);   //更新下载状态为【完成】
+        if (check_chunk(rcvr->chunk, rcvr->chunk->sha1))
+            update_state(down_chunks, rcvr->chunk, FINISHED);   //更新下载状态为【完成】
+        else update_state(down_chunks, rcvr->chunk, READY);     //数据不正确，重新获取
         remove_receiver(receiver_pool, rcvr);
     }
     free(pkt_ack);
@@ -238,6 +240,7 @@ void process_DENIED(packet *pkt, bt_peer_t *peer) {
 void *process_sender(sender *sdr) {
     puts("Uploading");
     if (log_file == NULL) {
+        remove("problem2-peer.txt");
         log_file = fopen("problem2-peer.txt", "a+");
         gettimeofday(&starter, NULL);
     }
@@ -294,10 +297,10 @@ void chunks2file() {
     }
     while (done_chunks->n) {
         data_chunk = (chunk_t *) dequeue(done_chunks);
-//        if (check_chunk(data_chunk, data_chunk->sha1)) {//检查数据是否正确
-        fseek(fp, data_chunk->id * BT_CHUNK_SIZE, SEEK_SET);
-        fwrite(data_chunk->data, BT_CHUNK_SIZE, 1, fp);
-//        } else break;
+        if (check_chunk(data_chunk, data_chunk->sha1)) {//检查数据是否正确
+            fseek(fp, data_chunk->id * BT_CHUNK_SIZE, SEEK_SET);
+            fwrite(data_chunk->data, BT_CHUNK_SIZE, 1, fp);
+        } else break;
         free_chunk(data_chunk);
     }
     fclose(fp);
